@@ -1,13 +1,12 @@
 name: EduOn Avto Kirish
 
 on:
+  workflow_dispatch: # Bu satr botni hozir qo'lda ishga tushirish imkonini beradi
   schedule:
-    # O'zbekiston vaqti bilan soat 08:30 da botni ishga tushirish (UTC 03:30)
     - cron: '30 3 * * 1-6'
-    # O'zbekiston vaqti bilan soat 10:00 da botni ishga tushirish (UTC 05:00)
     - cron: '00 5 * * 1-6'
-    # O'zbekiston vaqti bilan soat 12:00 da botni ishga tushirish (UTC 07:00)
     - cron: '00 7 * * 1-6'
+# Qolgan qismlariga tegmaymiz...
 
 jobs:
   run-bot:
