@@ -1,58 +1,45 @@
 import asyncio
-import json
-import os
 from playwright.async_api import async_playwright
 
-DARSLAR_URL = "https://adu.uz"
+# 1-QADAMDA BRAUZERDAN NUSXALAB OLGAN HAVOLANGIZNI SHU YERGA QO'YING:
+DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
 
 async def run_bot():
     async with async_playwright() as p:
-        print("1. Brauzer ishga tushmoqda...")
+        print("1. Bulutli brauzer ishga tushmoqda...")
         browser = await p.chromium.launch(headless=True, args=['--no-sandbox'])
-        
-        # Telefon seansini yuklash qismi
         context = await browser.new_context(
             user_agent="Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
             viewport={"width": 375, "height": 812}
         )
-        
-        # GitHub Secrets-dan cookies ma'lumotlarini o'qib olish
-        try:
-            cookies_json = os.environ.get("EDUON_COOKIES")
-            if cookies_json:
-                cookies = json.loads(cookies_json)
-                await context.add_cookies(cookies)
-                print("2. Telefon seansi (cookies) muvaffaqiyatli yuklandi!")
-            else:
-                print("Xatolik: Cookies topilmadi. Tizimga kirib bo'lmaydi.")
-                return
-        except Exception as e:
-            print(f"Sessiyani yuklashda xatolik: {e}")
-            return
-
         page = await context.new_page()
         
-        # To'g'ridan-to'g'ri dars sahifasiga o'tish
-        print("3. Jonli darslar sahifasiga o'tilmoqda...")
+        print("2. Dars sahifasiga to'g'ridan-to'g'ri kirilmoqda...")
         await page.goto(DARSLAR_URL, timeout=60000)
         await page.wait_for_load_state("networkidle")
         await page.wait_for_timeout(5000)
         
-        # Yashil "Kirish" tugmasini qidirish
-        print("4. Faol dars tugmasi qidirilmoqda...")
+        # Yashil "▶ Kirish" tugmasini qidirish va bosish
+        print("3. Aktiv dars tugmasi qidirilmoqda...")
         try:
+            # Sahifadagi yashil "Kirish" tugmasini matni orqali topadi
             dars_linki = page.locator("text=Kirish").first
+            
             if await dars_linki.is_visible():
                 await dars_linki.click()
-                print("🎉 MUVAFFAQIYATLI: Bot brauzer seansi orqali darsga kirdi!")
-                await asyncio.sleep(3600)  # 1 soat darsda qolish
+                print("🎉 ZO'R! Bot muvaffaqiyatli dars xonasiga kirdi!")
+                
+                # Darsda 1 soat (3600 soniya) davomida faol bo'lib turish
+                print("Bot dars jarayonini ushlab turibdi...")
+                await asyncio.sleep(3600)
             else:
-                print("Eslatma: Hozircha sahifada yashil Kirish tugmasi ko'rinmadi.")
+                print("Eslatma: Hozircha sahifada yashil 'Kirish' tugmasi ko'rinmadi (balki dars vaqti emasdir).")
         except Exception as e:
-            print(f"Tugmani bosishda xatolik: {e}")
+            print(f"Xatolik yuz berdi: {e}")
             
         await context.close()
         await browser.close()
+        print("4. Bot ishlashni tugatdi.")
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
