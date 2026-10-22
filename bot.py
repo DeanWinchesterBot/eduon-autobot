@@ -2,7 +2,7 @@ import asyncio
 from playwright.async_api import async_playwright
 
 # LOGIN VA DARSLAR LINKI
-LOGIN_URL = "https://eduon.adu.uz/dashboard/student"
+LOGIN_URL = "https://eduon.adu.uz"
 DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
 
 # SIZNING JIDDIY MA'LUMOTLARINGIZ
