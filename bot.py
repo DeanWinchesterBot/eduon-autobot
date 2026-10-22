@@ -8,7 +8,7 @@ DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
 # SIZNING JIDDIY MA'LUMOTLARINGIZ
 ONEID_LOGIN = "998907721203"  # OneID dagi telefon raqamingiz
 ONEID_PASSWORD = "RuUAtp8f8jYRVj"
-  # O'rnatgan parolingiz
+# O'rnatgan parolingiz
 
 async def run_bot():
     async with async_playwright() as p:
