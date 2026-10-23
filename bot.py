@@ -16,10 +16,11 @@ async def run_bot():
         browser = await p.chromium.launch(headless=True, args=['--no-sandbox'])
         context = await browser.new_context(viewport={"width": 1280, "height": 800})
         page = await context.new_page()
+        page.set_default_timeout(120000)
         
         print("2. EduOn login sahifasiga kirilmoqda...")
         await page.goto(LOGIN_URL, timeout=60000)
-        await page.wait_for_load_state("networkidle")
+        await page.wait_for_load_state("domcontentloaded")
         
         # OneID orqali avtomatik login qilish qismi
         print("3. OneID orqali avtomat kirish boshlandi...")
