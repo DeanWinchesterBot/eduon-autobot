@@ -1,28 +1,62 @@
 name: EduOn Avto Kirish
 
 on:
-  workflow_dispatch: # Bu satr botni hozir qo'lda ishga tushirish imkonini beradi
+  workflow_dispatch:
   schedule:
-    - cron: '30 3 * * 1-6'
-    - cron: '00 5 * * 1-6'
-    - cron: '00 7 * * 1-6'
-# Qolgan qismlariga tegmaymiz...
+    # -----------------------------------------------------
+    # 23-OKTABR (JUMA) - BUGUN!
+    # -----------------------------------------------------
+    - cron: '00 5 23 10 *'   # O'zb 10:00 (UTC 05:00) - Mikroiqtisodiyot
+    - cron: '00 7 23 10 *'   # O'zb 12:00 (UTC 07:00) - Mehnat iqtisodiyoti
+
+    # -----------------------------------------------------
+    # 26-OKTABR (DUSHANBA)
+    # -----------------------------------------------------
+    - cron: '30 3 26 10 *'   # O'zb 08:30 (UTC 03:30) - Mikroiqtisodiyot
+    - cron: '00 5 26 10 *'   # O'zb 10:00 (UTC 05:00) - Ekonometrika
+
+    # -----------------------------------------------------
+    # 27-OKTABR (SESHANBA)
+    # -----------------------------------------------------
+    - cron: '30 3 27 10 *'   # O'zb 08:30 (UTC 03:30) - Statistika
+    - cron: '00 5 27 10 *'   # O'zb 10:00 (UTC 05:00) - Ekonometrika
+    - cron: '00 7 27 10 *'   # O'zb 12:00 (UTC 07:00) - Inson resurslari
+    - cron: '30 8 27 10 *'   # O'zb 13:30 (UTC 08:30) - Inson resurslari
+
+    # -----------------------------------------------------
+    # 28-OKTABR (CHORSHANBA)
+    # -----------------------------------------------------
+    - cron: '30 3 28 10 *'   # O'zb 08:30 (UTC 03:30) - Falsafa
+    - cron: '00 7 28 10 *'   # O'zb 12:00 (UTC 07:00) - Mehnat iqtisodiyoti
+
+    # -----------------------------------------------------
+    # 29-OKTABR (PAYSHANBA)
+    # -----------------------------------------------------
+    - cron: '30 3 29 10 *'   # O'zb 08:30 (UTC 03:30) - Statistika
+    - cron: '00 5 29 10 *'   # O'zb 10:00 (UTC 05:00) - Falsafa
+    - cron: '00 7 29 10 *'   # O'zb 12:00 (UTC 07:00) - Ekonometrika
+
+    # -----------------------------------------------------
+    # 30-OKTABR (JUMA)
+    # -----------------------------------------------------
+    - cron: '00 5 30 10 *'   # O'zb 10:00 (UTC 05:00) - Mikroiqtisodiyot
+    - cron: '00 7 30 10 *'   # O'zb 12:00 (UTC 07:00) - Mehnat iqtisodiyoti
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
     steps:
     - name: Kodni yuklash
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
 
     - name: Python sozlash
-      uses: actions/setup-python@v4
+      uses: actions/setup-python@v5
       with:
-        python-version: '3.10'
+        python-version: '3.11'
 
     - name: Brauzer muhitini yuklash
       run: |
-        pip install playwright
+        pip install playwright requests
         playwright install chromium
 
     - name: Botni ishga tushirish
