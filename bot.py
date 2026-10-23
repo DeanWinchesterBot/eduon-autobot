@@ -61,7 +61,7 @@ async def run_bot():
         except Exception as e:
             print(f"❌ Darslar sahifasini ochishda sekinlashuv: {e}")
         
-        print("💡 [5/5] Faol dars ("Hozir efirda" yashil tugmasi) tekshirilmoqda...")
+        print("💡 [5/5] Faol dars ('Hozir efirda' yashil tugmasi) tekshirilmoqda...")
         try:
             # Sahifada "Kirish" so'zi bor har qanday elementni qidiramiz
             dars_tugmasi = page.locator("text=Kirish").first
