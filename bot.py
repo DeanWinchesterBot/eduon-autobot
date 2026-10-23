@@ -61,34 +61,41 @@ async def run_bot():
         except Exception as e:
             print(f"❌ Darslar sahifasini ochishda sekinlashuv: {e}")
         
-        print("💡 [5/5] Faol dars ('Hozir efirda' yashil tugmasi) tekshirilmoqda...")
+                print("💡 [5/5] Faol dars ('Kirish' tugmasi) tekshirilmoqda...")
         try:
-            # Sahifada "Kirish" so'zi bor har qanday elementni qidiramiz
-            dars_tugmasi = page.locator("text=Kirish").first
+            dars_linki = page.locator("text=Kirish").first
             
-            if await dars_tugmasi.is_visible():
-                await dars_tugmasi.click()
+            if await dars_linki.is_visible():
+                await dars_linki.click()
                 print("=======================================================")
-                print("🎉 MUVAFFAQIYATLI: Bot dars xonasiga muvaffaqiyatli kirdi!")
+                print("🎉 MUVAFFAQIYATLI: Dars xonasiga muvaffaqiyatli kirdi!")
                 print("=======================================================")
                 
-                # Darsda 1 soat (3600 soniya) davomida faol rejimni ushlab turish
-                print("Bot ulanish seansini ushlab turibdi. Chiqib ketilmaydi...")
-                await asyncio.sleep(3600)
+                # 1-TEKSHIRUV: Roppa-rosa 40 daqiqa (2400 soniya) kutish
+                print("⏳ 1-bosqich: Bot darsda. Keyingi tekshiruv 40 daqiqadan so'ng...")
+                await asyncio.sleep(2400)
+                print("-> [40-daqiqa]: Darsning yarmi o'tdi. Bot faol holatda davom etmoqda.")
+                
+                # 2-TEKSHIRUV: Keyingi 40 daqiqa + 30 soniya (2430 soniya) kutish
+                print("⏳ 2-bosqich: Dars yakunigacha oxirgi faza. 40 daqiqa va 30 soniya kutilmoqda...")
+                await asyncio.sleep(2430)
+                print("-> [80 daqiqa 30 soniya]: Dars vaqti rasman tugadi.")
+                
+                # Oxirgi marta sahifa holatini tekshirish
+                page_content = await page.content()
+                if "yakunlandi" in page_content.lower() or "tugadi" in page_content.lower() or "yopildi" in page_content.lower():
+                    print("🛑 Tizim: Dars to'liq yopilganligi tasdiqlandi.")
+                else:
+                    print("⚠️ Dars o'qituvchi tomonidan hali yopilmagan bo'lsa ham, vaqt limiti (80.5 daqiqa) tugagani uchun bot sessiyani yakunlaydi.")
+                    
             else:
-                print("-------------------------------------------------------------------------")
                 print("📢 Eslatma: Hozir class vaqti emasligi sababli yashil kirish tugmasi yo'q.")
-                print("Bot tizimga xatosiz kirdi, dars jadvalini ko'rdi va navbatni yakunladi.")
-                print("-------------------------------------------------------------------------")
         except Exception as e:
-            print(f"❌ Tugmani qidirishda xatolik yuz berdi: {e}")
+            print(f"❌ Xatolik yuz berdi: {e}")
             
-        # Brauzerni xavfsiz yopish
         await context.close()
         await browser.close()
-        print("🚀 Protsess muvaffaqiyatli yakunlandi. Bot navbatdagi darsni kutmoqda.")
+        print("🚀 Protsess to'liq yakunlandi. GitHub serveri xavfsiz o'chmoqda.")
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
-
-    
