@@ -53,7 +53,7 @@ async def run_bot():
         except Exception as e:
             print(f"❌ Avtorizatsiyada kutilmagan qiyinchilik: {e}")
         
-        print("💡 [4/5] Jonli darslar platformasiga to'g'ridan-to'g'ri o'tilmoqda...")
+            print("💡 [4/5] Jonli darslar platformasiga to'g'ridan-to'g'ri o'tilmoqda...")
         try:
             await page.goto(DARSLAR_URL, wait_until="commit")
             await page.wait_for_load_state("domcontentloaded")
@@ -61,41 +61,41 @@ async def run_bot():
         except Exception as e:
             print(f"❌ Darslar sahifasini ochishda sekinlashuv: {e}")
         
-                print("💡 [5/5] Faol dars ('Kirish' tugmasi) tekshirilmoqda...")
+            print("💡 [5/5] Faol dars ('Kirish' tugmasi) tekshirilmoqda...")
         try:
             dars_linki = page.locator("text=Kirish").first
             
             if await dars_linki.is_visible():
                 await dars_linki.click()
-                print("=======================================================")
-                print("🎉 MUVAFFAQIYATLI: Dars xonasiga muvaffaqiyatli kirdi!")
-                print("=======================================================")
+            print("=======================================================")
+            print("🎉 MUVAFFAQIYATLI: Dars xonasiga muvaffaqiyatli kirdi!")
+            print("=======================================================")
                 
                 # 1-TEKSHIRUV: Roppa-rosa 40 daqiqa (2400 soniya) kutish
-                print("⏳ 1-bosqich: Bot darsda. Keyingi tekshiruv 40 daqiqadan so'ng...")
+            print("⏳ 1-bosqich: Bot darsda. Keyingi tekshiruv 40 daqiqadan so'ng...")
                 await asyncio.sleep(2400)
-                print("-> [40-daqiqa]: Darsning yarmi o'tdi. Bot faol holatda davom etmoqda.")
+            print("-> [40-daqiqa]: Darsning yarmi o'tdi. Bot faol holatda davom etmoqda.")
                 
                 # 2-TEKSHIRUV: Keyingi 40 daqiqa + 30 soniya (2430 soniya) kutish
                 print("⏳ 2-bosqich: Dars yakunigacha oxirgi faza. 40 daqiqa va 30 soniya kutilmoqda...")
                 await asyncio.sleep(2430)
-                print("-> [80 daqiqa 30 soniya]: Dars vaqti rasman tugadi.")
+            print("-> [80 daqiqa 30 soniya]: Dars vaqti rasman tugadi.")
                 
                 # Oxirgi marta sahifa holatini tekshirish
                 page_content = await page.content()
                 if "yakunlandi" in page_content.lower() or "tugadi" in page_content.lower() or "yopildi" in page_content.lower():
-                    print("🛑 Tizim: Dars to'liq yopilganligi tasdiqlandi.")
+            print("🛑 Tizim: Dars to'liq yopilganligi tasdiqlandi.")
                 else:
-                    print("⚠️ Dars o'qituvchi tomonidan hali yopilmagan bo'lsa ham, vaqt limiti (80.5 daqiqa) tugagani uchun bot sessiyani yakunlaydi.")
+            print("⚠️ Dars o'qituvchi tomonidan hali yopilmagan bo'lsa ham, vaqt limiti (80.5 daqiqa) tugagani uchun bot sessiyani yakunlaydi.")
                     
             else:
-                print("📢 Eslatma: Hozir class vaqti emasligi sababli yashil kirish tugmasi yo'q.")
+            print("📢 Eslatma: Hozir class vaqti emasligi sababli yashil kirish tugmasi yo'q.")
         except Exception as e:
             print(f"❌ Xatolik yuz berdi: {e}")
             
         await context.close()
         await browser.close()
-        print("🚀 Protsess to'liq yakunlandi. GitHub serveri xavfsiz o'chmoqda.")
+            print("🚀 Protsess to'liq yakunlandi. GitHub serveri xavfsiz o'chmoqda.")
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
