@@ -8,7 +8,7 @@ LOGIN_URL = "https://eduon.adu.uz"
 DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
 COOKIES_FILE = "cookies.json"
 
-ONEID_LOGIN = "998907721203"       
+ONEID_LOGIN = "asadbekhoshimov"
 ONEID_PASSWORD = "RuUAtp8f8jYRVj"   
 
 async def run_bot():
