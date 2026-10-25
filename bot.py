@@ -3,8 +3,8 @@ import sys
 import os
 from playwright.async_api import async_playwright
 
-LOGIN_URL = "https://adu.uz"
-DARSLAR_URL = "https://adu.uz/dashboard/student/live"
+LOGIN_URL = "https://eduon.adu.uz"
+DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
 COOKIES_FILE = "cookies.json"
 
 ONEID_LOGIN = "998907721203"       
