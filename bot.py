@@ -1,92 +1,105 @@
 import asyncio
 import sys
+import os
 from playwright.async_api import async_playwright
 
-# TIZIM STRUKTURASI
 LOGIN_URL = "https://eduon.adu.uz"
-DARSLAR_URL = "https://https://https://eduon.adu.uz/dashboard/student/live"
+DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
+COOKIES_FILE = "cookies.json"
 
-# SIZNING AVTORIZATSIYA MA'LUMOTLARINGIZ
-ONEID_LOGIN = "998907721203"       # Bu yerga telefon raqamingizni yozing
-ONEID_PASSWORD = "RuUAtp8f8jYRVj"   # Bu yerga OneID parolingizni yozing
+ONEID_LOGIN = "998907721203"       
+ONEID_PASSWORD = "RuUAtp8f8jYRVj"   
 
 async def run_bot():
     async with async_playwright() as p:
-        print("💡 [1/5] Bulutli brauzer ochilmoqda...")
+        print("💡 [1/5] Brauzer ishga tushmoqda...")
         browser = await p.chromium.launch(
             headless=True, 
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         )
-        context = await browser.new_context(
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-            viewport={"width": 1280, "height": 800}
-        )
+        
+        if os.path.exists(COOKIES_FILE):
+            print("🍪 Esda saqlangan sessiya topildi, foydalanilmoqda...")
+            context = await browser.new_context(
+                storage_state=COOKIES_FILE,
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                viewport={"width": 1280, "height": 800}
+            )
+            has_session = True
+        else:
+            print("🔒 Sessiya topilmadi, yangi login qilinadi...")
+            context = await browser.new_context(
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                viewport={"width": 1280, "height": 800}
+            )
+            has_session = False
+
         page = await context.new_page()
-        
-        # Maksimal kutish vaqtini 2 soatga (7200000 ms) uzaytirdik
         page.set_default_timeout(7200000)
-        page.set_default_navigation_timeout(7200000)
         
-        print("💡 [2/5] EduOn Login sahifasiga ulanilmoqda...")
+        if has_session:
+            print("💡 [2/5] To'g'ridan-to'g'ri dars sahifasiga o'tilmoqda...")
+            try:
+                await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
+                await asyncio.sleep(5)
+                if "login" in page.url or await page.locator("input[type='text']").is_visible():
+                    print("⚠️ Sessiya eskirgan ekan, login qilinadi...")
+                    has_session = False
+            except Exception:
+                has_session = False
+
+        if not has_session:
+            print("💡 [2/5] EduOn Login sahifasiga ulanilmoqda...")
+            await page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            print("💡 [3/5] OneID identifikatsiyasi boshlandi...")
+            try:
+                await page.wait_for_selector("input[type='text']", timeout=15000)
+                await page.fill("input[type='text']", ONEID_LOGIN)
+                await page.fill("input[type='password']", ONEID_PASSWORD)
+                await page.click("button[type='submit'], text=Kirish")
+                await asyncio.sleep(8)
+                await context.storage_state(path=COOKIES_FILE)
+                print("✔️ Yangi login bajarildi va sessiya saqlandi.")
+                await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
+                await asyncio.sleep(5)
+            except Exception as e:
+                print(f"❌ Login xatoligi: {e}")
+
+        print("💡 [4/5] Dars holati tekshirilmoqda...")
         try:
-            await page.goto(LOGIN_URL, wait_until="commit")
-            await page.wait_for_load_state("domcontentloaded")
-        except Exception as e:
-            print(f"⚠️ Ulanish sekin: {e}")
-        
-        print("💡 [3/5] OneID identifikatsiyasi orqali kirish boshlandi...")
-        try:
-            await page.wait_for_selector("input[type='text']", timeout=15000)
-            await page.fill("input[type='text'], input[placeholder*='login']", ONEID_LOGIN)
-            await page.fill("input[type='password']", ONEID_PASSWORD)
-            await page.click("button[type='submit'], text=Kirish")
-            await asyncio.sleep(8) 
-            print("✔️ Login bajarildi.")
-        except Exception as e:
-            print(f"❌ Login xatoligi: {e}")
-        
-        print("💡 [4/5] Jonli darslar platformasiga o'tilmoqda...")
-        try:
-            await page.goto(DARSLAR_URL, wait_until="commit")
-            await page.wait_for_load_state("domcontentloaded")
-            await asyncio.sleep(5)
-        except Exception as e:
-            print(f"❌ Dars sahifasi ochilmadi: {e}")
-        
-        print("💡 [5/5] Faol dars ('Kirish' tugmasi) tekshirilmoqda...")
-        try:
+            page_content = await page.content()
+            page_content_lower = page_content.lower()
+            
+            if "faol dars" in page_content_lower and ("kirilgan" in page_content_lower or "faol" in page_content_lower):
+                print("📢 Smooth: Siz allaqachon darsdasiz. Ortiqcha yuklamasiz bot yopildi.")
+                await context.close()
+                await browser.close()
+                sys.exit(0)
+                
             dars_linki = page.locator("text=Kirish").first
             
             if await dars_linki.is_visible():
                 await dars_linki.click()
                 print("=======================================================")
-                print("🎉 MUVAFFAQIYATLI: Dars xonasiga muvaffaqiyatli kirildi!")
+                print("🎉 MUVAFFAQIYATLI: Dars xonasiga kirildi!")
                 print("=======================================================")
                 
-                # 1-TEKSHIRUV: Roppa-rosa 40 daqiqa (2400 soniya) kutish
-                print("⏳ 1-bosqich: Bot darsda. Keyingi tekshiruv 40 daqiqadan so'ng...")
+                await asyncio.sleep(5)
+                await page.screenshot(path="darsga_kirildi.png", full_page=True)
+                
+                print("⏳ Darsda kutish rejasi yoqildi (80.5 daqiqa)...")
                 await asyncio.sleep(2400)
-                print("-> [40-daqiqa]: Darsning yarmi o'tdi. Bot faol holatda davom etmoqda.")
-                
-                # 2-TEKSHIRUV: Keyingi 40 daqiqa + 30 soniya (2430 soniya) kutish
-                print("⏳ 2-bosqich: Dars yakunigacha oxirgi faza. 40 daqiqa va 30 soniya kutilmoqda...")
+                print("-> [40-daqiqa] Bot faol.")
                 await asyncio.sleep(2430)
-                print("-> [80 daqiqa 30 soniya]: Dars vaqti rasman tugadi.")
-                
-                # Oxirgi marta sahifa holatini tekshirish
-                page_content = await page.content()
-                if "yakunlandi" in page_content.lower() or "tugadi" in page_content.lower() or "yopildi" in page_content.lower():
-                    print("🛑 Tizim: Dars to'liq yopilganligi tasdiqlandi.")
-                else:
-                    print("⚠️ Dars o'qituvchi tomonidan hali yopilmagan bo'lsa ham, vaqt limiti (80.5 daqiqa) tugagani uchun bot sessiyani yakunlaydi.")
+                print("-> [80.5-daqiqa] Dars tugadi.")
             else:
-                print("📢 Eslatma: Hozir class vaqti emasligi sababli yashil kirish tugmasi yo'q.")
+                print("📢 Eslatma: Hozir dars vaqti emas (yashil tugma yo'q).")
         except Exception as e:
-            print(f"❌ Xatolik yuz berdi: {e}")
+            print(f"❌ Xatolik: {e}")
             
         await context.close()
         await browser.close()
-        print("🚀 Protsess to'liq yakunlandi. GitHub serveri xavfsiz o'chmoqda.")
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
+
