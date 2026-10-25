@@ -3,8 +3,8 @@ import sys
 import os
 from playwright.async_api import async_playwright
 
-LOGIN_URL = "https://eduon.adu.uz"
-DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
+LOGIN_URL = "https://adu.uz"
+DARSLAR_URL = "https://adu.uz/dashboard/student/live"
 COOKIES_FILE = "cookies.json"
 
 ONEID_LOGIN = "998907721203"       
@@ -35,43 +35,48 @@ async def run_bot():
             has_session = False
 
         page = await context.new_page()
-        page.set_default_timeout(7200000)
+        page.set_default_timeout(30000) # Maksimal 30 soniya kutish limiti
         
         if has_session:
             print("💡 [2/5] To'g'ridan-to'g'ri dars sahifasiga o'tilmoqda...")
             try:
-                await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
-                await asyncio.sleep(5)
+                await page.goto(DARSLAR_URL, timeout=30000)
+                await page.wait_for_selector("body", timeout=15000)
                 if "login" in page.url or await page.locator("input[type='text']").is_visible():
-                    print("⚠️ Sessiya eskirgan ekan, login qilinadi...")
+                    print("⚠️ Sessiya eskirgan ekan, qayta login qilinadi...")
                     has_session = False
             except Exception:
                 has_session = False
 
         if not has_session:
             print("💡 [2/5] EduOn Login sahifasiga ulanilmoqda...")
-            await page.goto(LOGIN_URL, wait_until="domcontentloaded")
-            print("💡 [3/5] OneID identifikatsiyasi boshlandi...")
             try:
-                await page.wait_for_selector("input[type='text']", timeout=15000)
+                await page.goto(LOGIN_URL, timeout=30000)
+                print("💡 [3/5] OneID identifikatsiyasi boshlandi...")
+                await page.wait_for_selector("input[type='text']", timeout=20000)
                 await page.fill("input[type='text']", ONEID_LOGIN)
                 await page.fill("input[type='password']", ONEID_PASSWORD)
-                await page.click("button[type='submit'], text=Kirish")
-                await asyncio.sleep(8)
+                
+                async with page.expect_navigation(timeout=30000):
+                    await page.click("button[type='submit'], text=Kirish")
+                
                 await context.storage_state(path=COOKIES_FILE)
                 print("✔️ Yangi login bajarildi va sessiya saqlandi.")
-                await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
-                await asyncio.sleep(5)
+                await page.goto(DARSLAR_URL, timeout=30000)
             except Exception as e:
-                print(f"❌ Login xatoligi: {e}")
+                print(f"❌ Login yoki ulanish xatoligi: {e}")
+                await context.close()
+                await browser.close()
+                sys.exit(1)
 
         print("💡 [4/5] Dars holati tekshirilmoqda...")
         try:
+            await page.wait_for_selector("body", timeout=15000)
             page_content = await page.content()
             page_content_lower = page_content.lower()
             
             if "faol dars" in page_content_lower and ("kirilgan" in page_content_lower or "faol" in page_content_lower):
-                print("📢 Smooth: Siz allaqachon darsdasiz. Ortiqcha yuklamasiz bot yopildi.")
+                print("📢 Smooth: Siz allaqachon darsdasiz. Jarayon to'xtatildi.")
                 await context.close()
                 await browser.close()
                 sys.exit(0)
@@ -93,13 +98,13 @@ async def run_bot():
                 await asyncio.sleep(2430)
                 print("-> [80.5-daqiqa] Dars tugadi.")
             else:
-                print("📢 Eslatma: Hozir dars vaqti emas (yashil tugma yo'q).")
+                print("📢 Eslatma: Hozir dars vaqti emas (yashil tugma yo'q). Bot darhol o'chadi.")
         except Exception as e:
-            print(f"❌ Xatolik: {e}")
+            print(f"❌ Darsni tekshirishda xatolik: {e}")
             
         await context.close()
         await browser.close()
+        print("🚀 Protsess yakunlandi.")
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
-
