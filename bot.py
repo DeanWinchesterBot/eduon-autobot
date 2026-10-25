@@ -3,6 +3,7 @@ import sys
 import os
 from playwright.async_api import async_playwright
 
+# To'g'ridan-to'g'ri EduOn tizimining OneID kirish eshigi manzili qo'yildi
 LOGIN_URL = "https://eduon.adu.uz"
 DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
 COOKIES_FILE = "cookies.json"
@@ -35,13 +36,13 @@ async def run_bot():
             has_session = False
 
         page = await context.new_page()
-        page.set_default_timeout(30000) # Maksimal 30 soniya kutish limiti
+        page.set_default_timeout(45000) # Kutish limiti 45 soniyaga uzaytirildi
         
         if has_session:
             print("💡 [2/5] To'g'ridan-to'g'ri dars sahifasiga o'tilmoqda...")
             try:
-                await page.goto(DARSLAR_URL, timeout=30000)
-                await page.wait_for_selector("body", timeout=15000)
+                await page.goto(DARSLAR_URL, timeout=45000)
+                await page.wait_for_selector("body", timeout=20000)
                 if "login" in page.url or await page.locator("input[type='text']").is_visible():
                     print("⚠️ Sessiya eskirgan ekan, qayta login qilinadi...")
                     has_session = False
@@ -51,27 +52,47 @@ async def run_bot():
         if not has_session:
             print("💡 [2/5] EduOn Login sahifasiga ulanilmoqda...")
             try:
-                await page.goto(LOGIN_URL, timeout=30000)
-                print("💡 [3/5] OneID identifikatsiyasi boshlandi...")
-                await page.wait_for_selector("input[type='text']", timeout=20000)
-                await page.fill("input[type='text']", ONEID_LOGIN)
-                await page.fill("input[type='password']", ONEID_PASSWORD)
+                await page.goto(LOGIN_URL, timeout=45000)
+                await asyncio.sleep(5) # Sahifa to'liq yuklanishi uchun qisqa kuting
                 
-                async with page.expect_navigation(timeout=30000):
-                    await page.click("button[type='submit'], text=Kirish")
+                # Agar OneID tugmasi bo'lsa uni bosadi, bo'lmasa to'g'ri maydonlarni qidiradi
+                oneid_btn = page.locator("text=OneID orqali kirish, .btn-primary").first
+                if await oneid_btn.is_visible():
+                    print("🔗 OneID tugmasi topildi, bosilmoqda...")
+                    await oneid_btn.click()
+                    await asyncio.sleep(5)
+
+                print("💡 [3/5] OneID identifikatsiyasi boshlandi...")
+                # Turli xil muqobil maydon selectorlari qo'shildi
+                input_field = page.locator("input[type='text'], input[name='username'], input[placeholder*='login']").first
+                await input_field.wait_for(state="visible", timeout=30000)
+                
+                await input_field.fill(ONEID_LOGIN)
+                await page.locator("input[type='password'], input[name='password']").first.fill(ONEID_PASSWORD)
+                
+                print("🔑 Login va parol kiritildi. Tizimga kirilmoqda...")
+                submit_btn = page.locator("button[type='submit'], input[type='submit'], text=Kirish").first
+                
+                async with page.expect_navigation(timeout=45000):
+                    await submit_btn.click()
                 
                 await context.storage_state(path=COOKIES_FILE)
                 print("✔️ Yangi login bajarildi va sessiya saqlandi.")
-                await page.goto(DARSLAR_URL, timeout=30000)
+                await page.goto(DARSLAR_URL, timeout=45000)
             except Exception as e:
                 print(f"❌ Login yoki ulanish xatoligi: {e}")
+                # Xatolik isboti uchun rasm olib ketamiz
+                try:
+                    await page.screenshot(path="darsga_kirildi.png", full_page=True)
+                except:
+                    pass
                 await context.close()
                 await browser.close()
                 sys.exit(1)
 
         print("💡 [4/5] Dars holati tekshirilmoqda...")
         try:
-            await page.wait_for_selector("body", timeout=15000)
+            await page.wait_for_selector("body", timeout=20000)
             page_content = await page.content()
             page_content_lower = page_content.lower()
             
@@ -108,3 +129,4 @@ async def run_bot():
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
+
