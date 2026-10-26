@@ -65,33 +65,36 @@ async def run_bot():
         if need_login:
             print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
             try:
-                # Tugmani qidirmasdan, to'g'ridan-to'g'ri OneID orqali kirish sahifasiga o'tamiz
-                # Eduon'ning OneID ga yo'naltiruvchi to'g'ridan-to'g'ri havolasi
-                print("🔗 OneID sahifasiga o'tilmoqda...")
-                await page.goto("https://eduon.adu.uz/auth/oneid", wait_until="domcontentloaded", timeout=60000)
+                # 1. Eduon bosh sahifasiga o'tamiz
+                await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
                 await asyncio.sleep(3)
 
-                # Agar yuqoridagi havola ishlamasa, id.egov.uz ga o'tishini kutamiz yoki majburiy o'tamiz
-                if "id.egov.uz" not in page.url:
-                    # Sahifadagi har qanday linkni bosib o'tishga harakat qilamiz
-                    try:
-                        await page.locator("a[href*='oneid'], a[href*='id.egov.uz']").first.click(timeout=5000)
-                    except:
-                        pass
+                print("🔍 'OneID orqali kirish' tugmasi qidirilmoqda...")
+                
+                # 2. Ko'k tugmani matn orqali topib bosamiz
+                oneid_btn = page.locator("text='OneID orqali kirish'").first
+                await oneid_btn.wait_for(state="visible", timeout=15000)
+                
+                async with page.expect_navigation(timeout=60000):
+                    await oneid_btn.click()
 
-                print("👤 Ma'lumotlar kiritilmoqda...")
+                print("🔗 OneID sahifasi ochildi. Ma'lumotlar kiritilmoqda...")
+                await asyncio.sleep(3)
 
-                # id.egov.uz dagi login inputi
-                username_input = page.locator("input#username, input[name='login'], input[placeholder*='Login']").first
-                await username_input.wait_for(state="visible", timeout=30000)
+                # 3. id.egov.uz dagi inputlar tartib bo'yicha olinadi:
+                # 0-chi input = Login, 1-chi input = Parol
+                inputs = page.locator("input[type='text'], input[type='tel'], input:not([type])")
+                await inputs.first.wait_for(state="visible", timeout=30000)
+                
+                username_input = inputs.first
                 await username_input.fill(ONEID_LOGIN)
 
-                # id.egov.uz dagi parol inputi
-                password_input = page.locator("input#password, input[name='password'], input[placeholder*='Parol']").first
+                password_input = page.locator("input[type='password']").first
+                await password_input.wait_for(state="visible", timeout=15000)
                 await password_input.fill(ONEID_PASSWORD)
 
-                # id.egov.uz dagi "Kirish" tugmasi
-                submit_btn = page.locator("button:has-text('Kirish'), button[type='submit']").first
+                # 4. Kirish tugmasi
+                submit_btn = page.locator("button[type='submit'], button:has-text('Kirish')").first
                 
                 print("🔑 OneID 'Kirish' tugmasi bosilmoqda...")
                 await submit_btn.click()
@@ -113,6 +116,7 @@ async def run_bot():
                     pass
                 await browser.close()
                 sys.exit(1)
+
 
         print("💡 [4/5] 'Jonli darslar' bo'limi tekshirilmoqda...")
         try:
