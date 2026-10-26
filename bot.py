@@ -4,7 +4,7 @@ import os
 from dotenv import load_dotenv
 from playwright.async_api import async_playwright
 
-# Env faylni yuklash
+# Atrof-muhit o'zgaruvchilarini yuklash (.env fayldan)
 load_dotenv()
 
 DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
@@ -14,7 +14,7 @@ COOKIES_FILE = "cookies.json"
 ONEID_LOGIN = os.getenv("asadbekhoshimov")
 ONEID_PASSWORD = os.getenv("RuUAtp8f8jYRVj")
 
-# O'zbekiston Proxy (Zarur bo'lsa yoqing, bo'lmasa None qiling)
+# Agar O'zbekiston proxy kerak bo'lsa .env ga UZ_PROXY qo'shishingiz mumkin
 UZ_PROXY = os.getenv("UZ_PROXY", None) 
 
 async def run_bot():
@@ -30,7 +30,7 @@ async def run_bot():
         context_args = {
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "viewport": {"width": 1280, "height": 800},
-            "permissions": ["microphone", "camera"],  # Media ruxsatlarini avtomatik berish
+            "permissions": ["microphone", "camera"],  # Mikrofon va kameraga avtomatik ruxsat
         }
 
         if UZ_PROXY:
@@ -45,7 +45,7 @@ async def run_bot():
         page = await context.new_page()
         page.set_default_timeout(45000)
 
-        print("💡 [2/5] EduOn darslar sahifasiga kirilmoqda...")
+        print("💡 [2/5] EduOn jonli darslar sahifasiga kirilmoqda...")
         need_login = False
         try:
             await page.goto(DARSLAR_URL, wait_until="networkidle")
@@ -55,26 +55,23 @@ async def run_bot():
             else:
                 print("✔️ Sessiya faol, login talab qilinmadi.")
         except Exception as e:
-            print(f"⚠️ To'g'ridan-to'g me'yoriy kirib bo'lmadi: {e}")
+            print(f"⚠️ Sahifaga to'g'ridan-to'g'ri kirib bo'lmadi: {e}")
             need_login = True
 
-        # AVTORIZATSIYA BLOKI
+        # AVTORIZATSIYA BLOKI (OneID)
         if need_login:
             print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
             try:
                 await page.goto(LOGIN_URL)
                 
-                # OneID tugmasini topish
                 oneid_btn = page.locator("a[href*='oneid'], button:has-text('OneID'), .btn-primary").first
                 await oneid_btn.wait_for(state="visible")
                 
-                # Pop-up yoki Shu sahifada yo'naltirishni to'g'ri ushlash
                 async with page.expect_navigation(timeout=60000):
                     await oneid_btn.click()
 
-                print("🔗 OneID sahifasi ochildi. Ma'lumotlar to'ldirilmoqda...")
+                print("🔗 OneID sahifasi ochildi. Ma'lumotlar kiritilmoqda...")
 
-                # Inputlarni kutish va to'ldirish
                 username_input = page.locator("input[name='login'], input[placeholder*='Login'], #username").first
                 await username_input.wait_for(state="visible")
                 await username_input.fill(ONEID_LOGIN)
@@ -87,49 +84,63 @@ async def run_bot():
                 print("🔑 'Kirish' tugmasi bosilmoqda...")
                 await submit_btn.click()
 
-                # Eduon'ga qaytguncha kutish
                 await page.wait_for_url(lambda url: "eduon.adu.uz" in url, timeout=60000)
                 
-                # Cookies saqlash
+                # Yangi cookies faylini saqlash
                 await context.storage_state(path=COOKIES_FILE)
                 print("🍪 Yangi cookies saqlandi!")
                 
-                await page.goto(DARSLAR_URL)
+                await page.goto(DARSLAR_URL, wait_until="networkidle")
 
             except Exception as e:
                 print(f"❌ OneID login jarayonida xatolik: {e}")
-                await page.screenshot(path="oneid_xato.png", full_page=True)
+                try:
+                    await page.screenshot(path="oneid_xato.png", full_page=True)
+                except:
+                    pass
                 await browser.close()
                 sys.exit(1)
 
-        print("💡 [4/5] Dars tugmasi va faollik tekshirilmoqda...")
+        print("💡 [4/5] 'Jonli darslar' bo'limi tekshirilmoqda...")
         try:
             await page.wait_for_selector("body")
             
-            # "Kirish" yoki "Darsga kirish" tugmasini dinamik izlash
-            dars_btn = page.locator("a:has-text('Kirish'), button:has-text('Kirish'), .btn-success").first
+            # Agar boshqa sahifada bo'lsa, to'g'ridan-to'g'ri jonli darslar havolasiga o'tamiz
+            if "live" not in page.url:
+                await page.goto(DARSLAR_URL, wait_until="networkidle")
+                await asyncio.sleep(3)
+
+            # Yashil "Kirish" tugmasini qidirish[span_2](start_span)[span_2](end_span)
+            print("🔍 Faol dars va 'Kirish' tugmasi qidirilmoqda...")
+            kirish_btn = page.locator("a:has-text('Kirish'), button:has-text('Kirish'), .btn-success").first
             
-            if await dars_btn.is_visible():
-                await dars_btn.click()
+            if await kirish_btn.is_visible(timeout=15000):
+                await kirish_btn.click()
                 print("=======================================================")
-                print("🎉 MUVAFFAQIYATLI: Dars xonasiga kirdingiz!")
+                print("🎉 MUVAFFAQIYATLI: Jonli dars xonasiga kirildi!")
                 print("=======================================================")
                 
-                await page.wait_for_timeout(5000)
+                await asyncio.sleep(5)
                 await page.screenshot(path="darsga_kirildi.png", full_page=True)
 
-                print("⏳ Darsda kutish rejasi yoqildi (80 daqiqa)...")
-                await asyncio.sleep(4800) # 80 daqiqa
-                print("-> Dars yakunlandi.")
+                # Dars vaqti aniq 1 soat 20 daqiqa (80 daqiqa = 4800 soniya)
+                print("⏳ Dars boshlandi. 1 soat 20 daqiqa davomida darsda qatnashilmoqda...")
+                await asyncio.sleep(4800) 
+                print("-> Dars vaqti tugadi, bot sessiyani yakunlaydi.")
             else:
-                print("📢 Hozir faol dars mavjud emas.")
+                print("📢 Hozir faol efirda dars mavjud emas ('Kirish' tugmacha topilmadi).")
+                await page.screenshot(path="dars_yoq.png", full_page=True)
                 
         except Exception as e:
-            print(f"❌ Darsga kirishda xatolik: {e}")
+            print(f"❌ Dars jarayonida xatolik: {e}")
+            try:
+                await page.screenshot(path="dars_xato.png", full_page=True)
+            except:
+                pass
 
         await context.close()
         await browser.close()
-        print("🚀 [5/5] Bot ishini yakunladi.")
+        print("🚀 [5/5] Bot o'z ishini muvaffaqiyatli yakunladi.")
 
 if __name__ == "__main__":
     asyncio.run(run_bot())
