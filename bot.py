@@ -70,8 +70,8 @@ async def run_bot():
 
                 print("🔍 'OneID orqali kirish' tugmasi qidirilmoqda...")
                 
-                # Eduon sahifasidagi ko'k rangli "OneID orqali kirish" tugmasini aniq topish
-                oneid_btn = page.locator("a:has-text('OneID orqali kirish'), button:has-text('OneID orqali kirish'), text='OneID orqali kirish'").first
+                # Xatosiz va aniq qidirish usuli
+                oneid_btn = page.get_by_text("OneID orqali kirish").first
                 await oneid_btn.wait_for(state="visible", timeout=20000)
                 
                 async with page.expect_navigation(timeout=60000):
