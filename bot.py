@@ -61,44 +61,47 @@ async def run_bot():
             print(f"⚠️ Sahifaga kirib bo'lmadi: {e}")
             need_login = True
 
-                # ONEID ORQALI KIRISH
+                    # ONEID ORQALI KIRISH
         if need_login:
             print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
             try:
-                await page.goto(LOGIN_URL, wait_until="domcontentloaded")
+                await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
                 await asyncio.sleep(3)
 
-                # OneID tugmasini matn yoki havolasi bo'yicha topish (har qanday holatda ham topadi)
-                print("🔍 OneID tugmasi qidirilmoqda...")
-                oneid_btn = page.locator("text=OneID, a[href*='oneid'], a:has-text('OneID'), button:has-text('OneID')").first
-                await oneid_btn.wait_for(state="visible", timeout=15000)
+                print("🔍 'OneID orqali kirish' tugmasi qidirilmoqda...")
+                
+                # Eduon sahifasidagi ko'k rangli "OneID orqali kirish" tugmasini aniq topish
+                oneid_btn = page.locator("a:has-text('OneID orqali kirish'), button:has-text('OneID orqali kirish'), text='OneID orqali kirish'").first
+                await oneid_btn.wait_for(state="visible", timeout=20000)
                 
                 async with page.expect_navigation(timeout=60000):
                     await oneid_btn.click()
 
                 print("🔗 OneID sahifasi ochildi. Ma'lumotlar kiritilmoqda...")
 
-                # OneID inputlari uchun kengaytirilgan selektorlar
-                username_input = page.locator("input[name='login'], input[placeholder*='Login'], input[type='text'], #username").first
+                # id.egov.uz dagi login inputi
+                username_input = page.locator("input#username, input[name='login'], input[placeholder*='Login']").first
                 await username_input.wait_for(state="visible", timeout=30000)
                 await username_input.fill(ONEID_LOGIN)
 
-                password_input = page.locator("input[name='password'], input[placeholder*='Parol'], input[type='password'], #password").first
+                # id.egov.uz dagi parol inputi
+                password_input = page.locator("input#password, input[name='password'], input[placeholder*='Parol']").first
                 await password_input.fill(ONEID_PASSWORD)
 
-                submit_btn = page.locator("button[type='submit'], #submitBtn, button:has-text('Kirish')").first
+                # id.egov.uz dagi ko'k "Kirish" tugmasi
+                submit_btn = page.locator("button:has-text('Kirish'), button[type='submit']").first
                 
-                print("🔑 'Kirish' tugmasi bosilmoqda...")
+                print("🔑 OneID 'Kirish' tugmasi bosilmoqda...")
                 await submit_btn.click()
 
-                # Eduon'ga qaytishini kutish
+                # Eduon'ga muvaffaqiyatli qaytib kelishini kutish
                 await page.wait_for_url(lambda url: "eduon.adu.uz" in url, timeout=60000)
                 
                 # Cookies saqlash
                 await context.storage_state(path=COOKIES_FILE)
                 print("🍪 Yangi cookies muvaffaqiyatli saqlandi!")
                 
-                await page.goto(DARSLAR_URL, wait_until="networkidle")
+                await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
 
             except Exception as e:
                 print(f"❌ OneID login jarayonida xatolik: {e}")
