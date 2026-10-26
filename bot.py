@@ -65,7 +65,7 @@ async def run_bot():
         if need_login:
             print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
             try:
-                await page.goto(LOGIN_URL, wait_until="networkidle")
+                await page.goto(LOGIN_URL, wait_until="domcontentloaded")
                 await asyncio.sleep(3)
 
                 # OneID tugmasini matn yoki havolasi bo'yicha topish (har qanday holatda ham topadi)
