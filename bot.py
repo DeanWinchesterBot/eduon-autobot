@@ -11,6 +11,8 @@ except ImportError:
 
 DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
 COOKIES_FILE = "cookies.json"
+LOGIN_URL = "https://eduon.adu.uz/login"
+
 
 ONEID_LOGIN = os.getenv("ONEID_LOGIN")
 ONEID_PASSWORD = os.getenv("ONEID_PASSWORD")
