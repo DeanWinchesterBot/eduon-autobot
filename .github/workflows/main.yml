@@ -1,9 +1,8 @@
 name: Eduon Auto Lesson Bot
 
 on:
-  workflow_dispatch: # GitHub sahifasidan qo'lda ishga tushirish uchun
+  workflow_dispatch:
   schedule:
-    # Toshkent vaqti (UTC+5) bo'yicha dars vaqtlari (Dushanba - Juma):
     - cron: '30 3 * * 1-5' # 08:30
     - cron: '0 5 * * 1-5'  # 10:00
     - cron: '0 7 * * 1-5'  # 12:00
@@ -22,23 +21,14 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Playwright va brauzerni kesh qilish (Tezkor yuklanish uchun)
-        uses: actions/cache@v4
-        id: playwright-cache
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('**/bot.py') }}
-          restore-keys: |
-            ${{ runner.os }}-playwright-
-
       - name: Kutubxonalarni o'rnatish
         run: |
           python -m pip install --upgrade pip
           pip install playwright python-dotenv
 
-      - name: Playwright brauzerini o'rnatish (Keshda bo'lmasa)
+      - name: Playwright brauzerini o'rnatish
         run: |
-          playwright install --with-deps chromium
+          playwright install chromium
 
       - name: Botni ishga tushirish
         env:
