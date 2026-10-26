@@ -53,43 +53,46 @@ async def run_bot():
             print(f"⚠️ Sahifaga kirib bo'lmadi: {e}")
             need_login = True
 
-        # ONEID ORQALI KIRISH (Tugmani qidirmasdan to'g'ridan-to'g'ri o'tamiz)
+                # ONEID ORQALI KIRISH
         if need_login:
-            print("💡 [3/5] OneID tizimiga to'g'ridan-to'g'ri o'tilmoqda...")
+            print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
             try:
-                # Eduon'ning OneID ga yo'naltiruvchi sahifasiga o'tamiz
-                await page.goto("https://eduon.adu.uz/auth/oneid", wait_until="domcontentloaded", timeout=60000)
-                await asyncio.sleep(4)
+                # Kutish vaqtini 120 sekundga oshiramiz (sekin ishlasa ham kutadi)
+                page.set_default_timeout(120000)
 
-                # Agar avtomatik o'tmasa, id.egov.uz ga o'zimiz majburiy boramiz
-                if "id.egov.uz" not in page.url:
-                    await page.goto("https://id.egov.uz/oz/oauth2/authorize?response_type=code&client_id=eduon_adu_uz&redirect_uri=https://eduon.adu.uz/auth/oneid/callback", wait_until="domcontentloaded")
-                    await asyncio.sleep(3)
+                print("🔗 Eduon login sahifasiga o'tilmoqda...")
+                await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
+                await asyncio.sleep(5)
 
-                print("👤 Ma'lumotlar kiritilmoqda...")
+                # id.egov.uz ga to'g'ridan-to'g'ri o'tish uchun sahifadagi OneID tugmasini qidiramiz
+                try:
+                    oneid_btn = page.locator("a:has-text('OneID'), button:has-text('OneID'), a[href*='oneid']").first
+                    await oneid_btn.click(timeout=10000)
+                except:
+                    # Agar tugma bosilmasa, to'g'ridan-to'g'ri manzilga o'tamiz
+                    await page.goto("https://id.egov.uz/", wait_until="domcontentloaded", timeout=60000)
 
-                # id.egov.uz dagi birinchi va ikkinchi inputlar (Login va Parol)
-                inputs = page.locator("input[type='text'], input[type='tel'], input:not([type])")
-                await inputs.first.wait_for(state="visible", timeout=30000)
-                
-                await inputs.first.fill(ONEID_LOGIN)
+                print("👤 OneID sahifasi ochildi. Ma'lumotlar kiritilmoqda...")
+                await asyncio.sleep(3)
+
+                # Inputlarni topish
+                username_input = page.locator("input[type='text'], input[type='tel'], input[name='login']").first
+                await username_input.wait_for(state="visible", timeout=60000)
+                await username_input.fill(ONEID_LOGIN)
 
                 password_input = page.locator("input[type='password']").first
-                await password_input.wait_for(state="visible", timeout=15000)
+                await password_input.wait_for(state="visible", timeout=30000)
                 await password_input.fill(ONEID_PASSWORD)
 
-                # Kirish tugmasi
                 submit_btn = page.locator("button[type='submit'], button:has-text('Kirish')").first
-                
-                print("🔑 OneID 'Kirish' tugmasi bosilmoqda...")
+                print("🔑 'Kirish' tugmasi bosilmoqda...")
                 await submit_btn.click()
 
-                # Eduon'ga muvaffaqiyatli qaytib kelishini kutish
-                await page.wait_for_url(lambda url: "eduon.adu.uz" in url, timeout=60000)
+                # Eduon'ga qaytishini kutish
+                await page.wait_for_url(lambda url: "eduon.adu.uz" in url, timeout=120000)
                 
-                # Cookies saqlash
                 await context.storage_state(path=COOKIES_FILE)
-                print("🍪 Yangi cookies muvaffaqiyatli saqlandi!")
+                print("🍪 Cookies muvaffaqiyatli saqlandi!")
                 
                 await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
 
@@ -101,6 +104,7 @@ async def run_bot():
                     pass
                 await browser.close()
                 sys.exit(1)
+
 
         print("💡 [4/5] 'Jonli darslar' bo'limi tekshirilmoqda...")
         try:
