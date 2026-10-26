@@ -18,7 +18,6 @@ async def run_bot():
             args=['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
         )
         
-        # 1-BOSQICH: Keshdan eski cookies faylini tekshirish
         if os.path.exists(COOKIES_FILE):
             print("🍪 Esda saqlangan cookies topildi, yuklanmoqda...")
             context = await browser.new_context(
@@ -34,16 +33,14 @@ async def run_bot():
             )
 
         page = await context.new_page()
-        page.set_default_timeout(60000) # Kutish limiti 60 soniya
+        page.set_default_timeout(60000)
         
-        # 2-BOSQICH: Loginsiz to'g'ridan-to'g'ri dars sahifasiga kirishga urinish
         print("💡 [2/5] Loginsiz to'g'ridan-to'g'ri dars sahifasiga kirish urinilmoqda...")
         need_login = False
         try:
             await page.goto(DARSLAR_URL, timeout=45000)
-            await asyncio.sleep(5) # Sahifa barqarorlashishi uchun qisqa kutish
+            await asyncio.sleep(5)
             
-            # Agar sahifa bizni loginga haydasa yoki kirish maydonlari ko'rinib qolsa
             current_url = page.url
             if "login" in current_url or await page.locator("input[type='text'], input[type='password']").is_visible():
                 print("⚠️ Tizim login so'radi! OneID orqali avtorizatsiyaga o'tiladi...")
@@ -54,7 +51,6 @@ async def run_bot():
             print(f"⚠️ Dars sahifasiga to'g'ridan-to'g'ri kirib bo'lmadi, login sahifasi tekshiriladi: {e}")
             need_login = True
 
-        # 3-BOSQICH: Agar login so'rasa, OneID tizimidan o'tish
         if need_login:
             print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
             try:
@@ -62,49 +58,52 @@ async def run_bot():
                     await page.goto(LOGIN_URL, timeout=45000)
                     await asyncio.sleep(5)
 
-                # OneID tugmasi bormi?
                 oneid_btn = page.locator("text=OneID, .btn-primary, a[href*='oneid']").first
-                if await oneid_btn.is_visible():
-                    print("🔗 OneID orqali kirish tugmasi bosilmoqda...")
+                
+                # Yangi vkladka (popup) ochilishini kuzatish
+                async with context.expect_page() as new_page_info:
                     await oneid_btn.click()
-                    await asyncio.sleep(5)
+                oneid_page = await new_page_info.value
+                await oneid_page.set_default_timeout(60000)
+                print("🔗 OneID sahifasi yangi tabda ochildi. Inputlar to'ldirilmoqda...")
+                
+                await asyncio.sleep(5)
 
-                # Input maydonlarini to'ldirish
-                input_field = page.locator("input[type='text'], input[name='username'], input[placeholder*='login']").first
-                await input_field.wait_for(state="visible", timeout=30000)
+                # OneID rasmiy ID selectorlari orqali aniq qidirish (#username va #password)
+                input_field = oneid_page.locator("#username, input[type='text'], input[name='username']").first
+                await input_field.wait_for(state="visible", timeout=45000)
                 await input_field.fill(ONEID_LOGIN)
                 
-                password_field = page.locator("input[type='password'], input[name='password']").first
+                password_field = oneid_page.locator("#password, input[type='password'], input[name='password']").first
                 await password_field.fill(ONEID_PASSWORD)
                 
-                print("🔑 Login va parol kiritildi. Tizimga kirilmoqda...")
-                submit_btn = page.locator("button[type='submit'], input[type='submit'], text=Kirish").first
+                print("🔑 Login va parol kiritildi. Kirish bosilmoqda...")
+                submit_btn = oneid_page.locator("button[type='submit'], #submitBtn, text=Kirish").first
                 
-                async with page.expect_navigation(timeout=60000):
-                    await submit_btn.click()
+                await submit_btn.click()
+                await asyncio.sleep(10) # EduOn ga qayta yo'naltirishni kutish
                 
-                # Yangi cookies faylini kelgusi safar uchun keshga yozish
+                # Asosiy sahifaga qaytamiz va cookies saqlaymiz
                 await context.storage_state(path=COOKIES_FILE)
                 print("🍪 Yangi cookies muvaffaqiyatli saqlandi!")
                 
-                # Login tugagach dars sahifasiga qaytish
                 await page.goto(DARSLAR_URL, timeout=45000)
             except Exception as e:
                 print(f"❌ OneID login jarayonida xatolik: {e}")
                 try: await page.screenshot(path="darsga_kirildi.png", full_page=True)
                 except: pass
+                try: await oneid_page.screenshot(path="oneid_xato.png", full_page=True)
+                except: pass
                 await context.close()
-                browser.close()
+                await browser.close()
                 sys.exit(1)
 
-        # 4-BOSQICH: Darsni tekshirish va unga kirish
         print("💡 [4/5] Dars holati tekshirilmoqda...")
         try:
             await page.wait_for_selector("body", timeout=20000)
             page_content = await page.content()
             page_content_lower = page_content.lower()
             
-            # Agar parallel bot ishlayotgan bo'lsa smooth chiqib ketish
             if "faol dars" in page_content_lower and ("kirilgan" in page_content_lower or "faol" in page_content_lower):
                 print("📢 Smooth: Siz allaqachon dars xonasidasiz. Ortiqcha bot o'chirildi.")
                 await context.close()
@@ -122,7 +121,6 @@ async def run_bot():
                 await asyncio.sleep(5)
                 await page.screenshot(path="darsga_kirildi.png", full_page=True)
                 
-                # Darsda o'tirish bosqichi
                 print("⏳ Darsda kutish rejasi yoqildi (80.5 daqiqa)...")
                 await asyncio.sleep(2400)
                 print("-> [40-daqiqa] Bot darsda faol.")
