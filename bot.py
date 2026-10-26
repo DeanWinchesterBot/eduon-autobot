@@ -61,25 +61,29 @@ async def run_bot():
             print(f"⚠️ Sahifaga kirib bo'lmadi: {e}")
             need_login = True
 
-        # ONEID ORQALI KIRISH
+                # ONEID ORQALI KIRISH
         if need_login:
             print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
             try:
-                await page.goto(LOGIN_URL)
-                
-                oneid_btn = page.locator("a[href*='oneid'], button:has-text('OneID'), .btn-primary").first
-                await oneid_btn.wait_for(state="visible")
+                await page.goto(LOGIN_URL, wait_until="networkidle")
+                await asyncio.sleep(3)
+
+                # OneID tugmasini matn yoki havolasi bo'yicha topish (har qanday holatda ham topadi)
+                print("🔍 OneID tugmasi qidirilmoqda...")
+                oneid_btn = page.locator("text=OneID, a[href*='oneid'], a:has-text('OneID'), button:has-text('OneID')").first
+                await oneid_btn.wait_for(state="visible", timeout=15000)
                 
                 async with page.expect_navigation(timeout=60000):
                     await oneid_btn.click()
 
                 print("🔗 OneID sahifasi ochildi. Ma'lumotlar kiritilmoqda...")
 
-                username_input = page.locator("input[name='login'], input[placeholder*='Login'], #username").first
-                await username_input.wait_for(state="visible")
+                # OneID inputlari uchun kengaytirilgan selektorlar
+                username_input = page.locator("input[name='login'], input[placeholder*='Login'], input[type='text'], #username").first
+                await username_input.wait_for(state="visible", timeout=30000)
                 await username_input.fill(ONEID_LOGIN)
 
-                password_input = page.locator("input[name='password'], input[type='password'], #password").first
+                password_input = page.locator("input[name='password'], input[placeholder*='Parol'], input[type='password'], #password").first
                 await password_input.fill(ONEID_PASSWORD)
 
                 submit_btn = page.locator("button[type='submit'], #submitBtn, button:has-text('Kirish')").first
@@ -87,10 +91,12 @@ async def run_bot():
                 print("🔑 'Kirish' tugmasi bosilmoqda...")
                 await submit_btn.click()
 
+                # Eduon'ga qaytishini kutish
                 await page.wait_for_url(lambda url: "eduon.adu.uz" in url, timeout=60000)
                 
+                # Cookies saqlash
                 await context.storage_state(path=COOKIES_FILE)
-                print("🍪 Yangi cookies saqlandi!")
+                print("🍪 Yangi cookies muvaffaqiyatli saqlandi!")
                 
                 await page.goto(DARSLAR_URL, wait_until="networkidle")
 
@@ -102,6 +108,7 @@ async def run_bot():
                     pass
                 await browser.close()
                 sys.exit(1)
+
 
         print("💡 [4/5] 'Jonli darslar' bo'limi tekshirilmoqda...")
         try:
