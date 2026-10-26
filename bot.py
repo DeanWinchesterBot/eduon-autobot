@@ -3,7 +3,6 @@ import sys
 import os
 from playwright.async_api import async_playwright
 
-# .env fayl majburiy emas, agar bo'lsa o'qiydi, bo'lmasa GitHub Secrets'dan oladi
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -11,18 +10,14 @@ except ImportError:
     pass
 
 DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
-LOGIN_URL = "https://eduon.adu.uz"
 COOKIES_FILE = "cookies.json"
 
-# To'g'ridan-to'g'ri muhit o'zgaruvchilaridan o'qish (GitHub Secrets shuni ishlatadi)
 ONEID_LOGIN = os.getenv("ONEID_LOGIN")
 ONEID_PASSWORD = os.getenv("ONEID_PASSWORD")
-UZ_PROXY = os.getenv("UZ_PROXY", None) 
 
 async def run_bot():
     if not ONEID_LOGIN or not ONEID_PASSWORD:
         print("❌ XATOLIK: ONEID_LOGIN yoki ONEID_PASSWORD topilmadi!")
-        print("Iltimos, GitHub repository -> Settings -> Secrets and variables -> Actions bo'limiga kirib ularni to'g'ri qo'shganingizni tekshiring.")
         sys.exit(1)
 
     async with async_playwright() as p:
@@ -33,11 +28,7 @@ async def run_bot():
         context_args = {
             "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "viewport": {"width": 1280, "height": 800},
-            "permissions": ["microphone", "camera"],
         }
-
-        if UZ_PROXY:
-            context_args["proxy"] = {"server": UZ_PROXY}
 
         if os.path.exists(COOKIES_FILE):
             print("🍪 Saqlangan cookies yuklanmoqda...")
@@ -51,8 +42,9 @@ async def run_bot():
         print("💡 [2/5] EduOn jonli darslar sahifasiga kirilmoqda...")
         need_login = False
         try:
-            await page.goto(DARSLAR_URL, wait_until="networkidle")
-            if "login" in page.url or "id.egov.uz" in page.url:
+            await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
+            await asyncio.sleep(3)
+            if "login" in page.url or "id.egov.uz" in page.url or "auth" in page.url:
                 print("⚠️ Tizim avtorizatsiya so'radi.")
                 need_login = True
             else:
@@ -60,40 +52,33 @@ async def run_bot():
         except Exception as e:
             print(f"⚠️ Sahifaga kirib bo'lmadi: {e}")
             need_login = True
-            
-        # ONEID ORQALI KIRISH
+
+        # ONEID ORQALI KIRISH (Tugmani qidirmasdan to'g'ridan-to'g'ri o'tamiz)
         if need_login:
-            print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
+            print("💡 [3/5] OneID tizimiga to'g'ridan-to'g'ri o'tilmoqda...")
             try:
-                # 1. Eduon bosh sahifasiga o'tamiz
-                await page.goto(LOGIN_URL, wait_until="domcontentloaded", timeout=60000)
-                await asyncio.sleep(3)
+                # Eduon'ning OneID ga yo'naltiruvchi sahifasiga o'tamiz
+                await page.goto("https://eduon.adu.uz/auth/oneid", wait_until="domcontentloaded", timeout=60000)
+                await asyncio.sleep(4)
 
-                print("🔍 'OneID orqali kirish' tugmasi qidirilmoqda...")
-                
-                # 2. Ko'k tugmani matn orqali topib bosamiz
-                oneid_btn = page.locator("text='OneID orqali kirish'").first
-                await oneid_btn.wait_for(state="visible", timeout=15000)
-                
-                async with page.expect_navigation(timeout=60000):
-                    await oneid_btn.click()
+                # Agar avtomatik o'tmasa, id.egov.uz ga o'zimiz majburiy boramiz
+                if "id.egov.uz" not in page.url:
+                    await page.goto("https://id.egov.uz/oz/oauth2/authorize?response_type=code&client_id=eduon_adu_uz&redirect_uri=https://eduon.adu.uz/auth/oneid/callback", wait_until="domcontentloaded")
+                    await asyncio.sleep(3)
 
-                print("🔗 OneID sahifasi ochildi. Ma'lumotlar kiritilmoqda...")
-                await asyncio.sleep(3)
+                print("👤 Ma'lumotlar kiritilmoqda...")
 
-                # 3. id.egov.uz dagi inputlar tartib bo'yicha olinadi:
-                # 0-chi input = Login, 1-chi input = Parol
+                # id.egov.uz dagi birinchi va ikkinchi inputlar (Login va Parol)
                 inputs = page.locator("input[type='text'], input[type='tel'], input:not([type])")
                 await inputs.first.wait_for(state="visible", timeout=30000)
                 
-                username_input = inputs.first
-                await username_input.fill(ONEID_LOGIN)
+                await inputs.first.fill(ONEID_LOGIN)
 
                 password_input = page.locator("input[type='password']").first
                 await password_input.wait_for(state="visible", timeout=15000)
                 await password_input.fill(ONEID_PASSWORD)
 
-                # 4. Kirish tugmasi
+                # Kirish tugmasi
                 submit_btn = page.locator("button[type='submit'], button:has-text('Kirish')").first
                 
                 print("🔑 OneID 'Kirish' tugmasi bosilmoqda...")
@@ -117,13 +102,10 @@ async def run_bot():
                 await browser.close()
                 sys.exit(1)
 
-
         print("💡 [4/5] 'Jonli darslar' bo'limi tekshirilmoqda...")
         try:
-            await page.wait_for_selector("body")
-            
             if "live" not in page.url:
-                await page.goto(DARSLAR_URL, wait_until="networkidle")
+                await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
                 await asyncio.sleep(3)
 
             print("🔍 Faol dars va 'Kirish' tugmasi qidirilmoqda...")
@@ -138,10 +120,8 @@ async def run_bot():
                 await asyncio.sleep(5)
                 await page.screenshot(path="darsga_kirildi.png", full_page=True)
 
-                # Dars vaqti 1 soat 20 daqiqa (4800 soniya)
                 print("⏳ Dars boshlandi. 1 soat 20 daqiqa davomida darsda qatnashilmoqda...")
                 await asyncio.sleep(4800) 
-                print("-> Dars vaqti tugadi, bot sessiyani yakunlaydi.")
             else:
                 print("📢 Hozir faol efirda dars mavjud emas ('Kirish' tugmasi topilmadi).")
                 await page.screenshot(path="dars_yoq.png", full_page=True)
