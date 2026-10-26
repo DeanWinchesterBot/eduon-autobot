@@ -7,7 +7,7 @@ LOGIN_URL = "https://eduon.adu.uz"
 DARSLAR_URL = "https://eduon.adu.uz/dashboard/student/live"
 COOKIES_FILE = "cookies.json"
 
-ONEID_LOGIN = "asadbekhoshimov"       
+ONEID_LOGIN = "998907721203"       
 ONEID_PASSWORD = "RuUAtp8f8jYRVj"   
 
 async def run_bot():
@@ -42,16 +42,15 @@ async def run_bot():
             await asyncio.sleep(5)
             
             current_url = page.url
-            if "login" in current_url or await page.locator("input[placeholder*='kiriting']").is_visible():
+            if "login" in current_url:
                 print("⚠️ Tizim login so'radi! OneID orqali avtorizatsiyaga o'tiladi...")
                 need_login = True
             else:
                 print("✔️ Ajoyib! Sessiya faol, login talab qilinmadi.")
         except Exception as e:
-            print(f"⚠️ Dars sahifasiga to'g'ridan-to'g'ri kirib bo'lmadi, login sahifasi tekshiriladi: {e}")
+            print(f"⚠️ Dars sahifasiga to'g'ridan-to'g'ri kirib bo'lmadi: {e}")
             need_login = True
 
-        oneid_page = None # Rasmga olish uchun o'zgaruvchi
         if need_login:
             print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
             try:
@@ -59,51 +58,56 @@ async def run_bot():
                     await page.goto(LOGIN_URL, timeout=45000)
                     await asyncio.sleep(5)
 
-                oneid_btn = page.locator("text=OneID orqali kirish, .btn-primary, a[href*='oneid']").first
+                # Rasmda ko'ringan ramkali OneID tugmasining aniq CSS klassi selectori
+                oneid_btn = page.locator("a[href*='oneid'], button[class*='btn']").first
+                await oneid_btn.wait_for(state="visible", timeout=15000)
                 
-                async with context.expect_page() as new_page_info:
+                print("🔗 OneID tugmasi aniqlandi, bosilmoqda...")
+                
+                # Yangi oyna ochilishi yoki joriy sahifa o'zgarishini aqlli boshqarish
+                try:
+                    async with context.expect_page(timeout=10000) as new_page_info:
+                        await oneid_btn.click()
+                    active_page = await new_page_info.value
+                    print("🌐 Yangi vkladka ochildi.")
+                except Exception:
                     await oneid_btn.click()
-                oneid_page = await new_page_info.value
-                await oneid_page.set_default_timeout(60000)
-                
-                print("🔗 id.egov.uz sahifasi ochildi. Inputlar to'ldirilmoqda...")
-                await asyncio.sleep(5)
+                    active_page = page
+                    print("🌐 Joriy vkladkada davom etiladi.")
 
-                input_field = oneid_page.locator("input[placeholder='Loginni kiriting'], input[placeholder*='Login'], #username").first
-                await input_field.wait_for(state="visible", timeout=45000)
+                await asyncio.sleep(8)
+                
+                # Yangi id.egov.uz tizimi elementlarini kiritish
+                input_field = active_page.locator("input[placeholder*='Login'], input[type='text'], #username").first
+                await input_field.wait_for(state="visible", timeout=30000)
                 await input_field.fill(ONEID_LOGIN)
                 
-                password_field = oneid_page.locator("input[placeholder='Parolni kiriting'], input[type='password'], #password").first
+                password_field = active_page.locator("input[placeholder*='Parol'], input[type='password'], #password").first
                 await password_field.fill(ONEID_PASSWORD)
                 
-                print("🔑 Login va parol kiritildi. 'Kirish' tugmasi bosilmoqda...")
-                submit_btn = oneid_page.locator("button:has-text('Kirish'), button[type='submit'], .btn-primary, #submitBtn").first
+                print("🔑 Ma'lumotlar kiritildi. Kirish bajarilmoqda...")
+                submit_btn = active_page.locator("button:has-text('Kirish'), button[type='submit'], .btn-primary, #submitBtn").first
                 
-                async with oneid_page.expect_navigation(timeout=45000):
-                    await submit_btn.click()
-                    
-                print("⏳ EduOn platformasiga qayta yo'naltirish kutilmoqda (12 soniya)...")
+                await submit_btn.click()
+                print("⏳ Yo'naltirish kutilmoqda...")
                 await asyncio.sleep(12) 
                 
                 await context.storage_state(path=COOKIES_FILE)
                 print("🍪 Yangi cookies muvaffaqiyatli saqlandi!")
                 
-                await page.goto(DARSLAR_URL, timeout=45000)
+                if active_page != page:
+                    await page.goto(DARSLAR_URL, timeout=45000)
+                else:
+                    await active_page.goto(DARSLAR_URL, timeout=45000)
+                    
             except Exception as e:
-                print(f"❌ Yangi OneID tizimida xatolik: {e}")
-                
-                # 📸 ONEID XATO BERGAN SAHIFANI RASMGA OLISH
-                print("📸 Isbot: OneID xatolik sahifasidan skrinshot olinmoqda...")
+                print(f"❌ OneID login qismida xatolik: {e}")
                 try:
-                    if oneid_page:
-                        await oneid_page.screenshot(path="oneid_xato.png", full_page=True)
-                        print("✔️ OneID sahifasi muvaffaqiyatli rasmga olindi (oneid_xato.png).")
+                    if 'active_page' in locals():
+                        await active_page.screenshot(path="oneid_xato.png", full_page=True)
                     else:
                         await page.screenshot(path="oneid_xato.png", full_page=True)
-                        print("✔️ Asosiy sahifa rasmga olindi (oneid_xato.png).")
-                except Exception as img_err:
-                    print(f"⚠️ Skrinshot olishda xato: {img_err}")
-                    
+                except: pass
                 await context.close()
                 await browser.close()
                 sys.exit(1)
@@ -115,7 +119,7 @@ async def run_bot():
             page_content_lower = page_content.lower()
             
             if "faol dars" in page_content_lower and ("kirilgan" in page_content_lower or "faol" in page_content_lower):
-                print("📢 Smooth: Siz allaqachon dars xonasidasiz. Ortiqcha bot o'chirildi.")
+                print("📢 Smooth: Siz allaqachon dars xonasidasiz.")
                 await context.close()
                 await browser.close()
                 sys.exit(0)
@@ -137,9 +141,9 @@ async def run_bot():
                 await asyncio.sleep(2430)
                 print("-> [80.5-daqiqa] Dars yakunlandi.")
             else:
-                print("📢 Eslatma: Hozir dars vaqti emas (yashil tugma yo'q). Bot ishni yakunladi.")
+                print("📢 Eslatma: Hozir dars vaqti emas. Bot ishni yakunlandi.")
         except Exception as e:
-            print(f"❌ Darsni tekshirish bosqichida xatolik: {e}")
+            print(f"❌ Dars bosqichida xatolik: {e}")
             
         await context.close()
         await browser.close()
