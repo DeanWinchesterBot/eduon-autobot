@@ -11,6 +11,7 @@ on:
 jobs:
   run-bot:
     runs-on: ubuntu-latest
+    timeout-minutes: 110
 
     steps:
       - name: Kodni yuklab olish
@@ -28,14 +29,29 @@ jobs:
 
       - name: Playwright brauzerini o'rnatish
         run: |
-          playwright install chromium
+          playwright install --with-deps chromium
+
+      - name: Cookies keshini tiklash
+        uses: actions/cache/restore@v4
+        with:
+          path: cookies.json
+          key: eduon-cookies-${{ github.run_id }}
+          restore-keys: eduon-cookies-
 
       - name: Botni ishga tushirish
         env:
           ONEID_LOGIN: ${{ secrets.ONEID_LOGIN }}
           ONEID_PASSWORD: ${{ secrets.ONEID_PASSWORD }}
+          EDUON_COOKIES: ${{ secrets.EDUON_COOKIES }}
         run: |
           python bot.py
+
+      - name: Cookies keshini saqlash
+        if: always() && hashFiles('cookies.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: cookies.json
+          key: eduon-cookies-${{ github.run_id }}
 
       - name: Skrinshotlarni saqlash (Tekshirish uchun)
         if: always()
@@ -43,3 +59,4 @@ jobs:
         with:
           name: bot-screenshots
           path: '*.png'
+          if-no-files-found: ignore
