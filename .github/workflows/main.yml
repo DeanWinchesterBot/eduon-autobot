@@ -8,10 +8,14 @@ on:
     - cron: '0 7 * * 1-5'  # 12:00
     - cron: '30 8 * * 1-5' # 13:30
 
+concurrency:
+  group: eduon-bot
+  cancel-in-progress: false
+
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    timeout-minutes: 110
+    timeout-minutes: 130
 
     steps:
       - name: Kodni yuklab olish
@@ -44,7 +48,7 @@ jobs:
           ONEID_PASSWORD: ${{ secrets.ONEID_PASSWORD }}
           EDUON_COOKIES: ${{ secrets.EDUON_COOKIES }}
         run: |
-          python bot.py
+          python -u bot.py
 
       - name: Cookies keshini saqlash
         if: always() && hashFiles('cookies.json') != ''
