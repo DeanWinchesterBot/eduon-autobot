@@ -2,6 +2,8 @@ import asyncio
 import json
 import os
 import sys
+import time
+from datetime import datetime, timedelta, timezone
 
 from playwright.async_api import async_playwright
 
@@ -18,6 +20,7 @@ COOKIES_FILE = "cookies.json"
 ONEID_LOGIN = os.getenv("ONEID_LOGIN")
 ONEID_PASSWORD = os.getenv("ONEID_PASSWORD")
 EDUON_COOKIES = os.getenv("EDUON_COOKIES")  # Cookie-Editor JSON (GitHub Secret)
+WAIT_MINUTES = int(os.getenv("WAIT_MINUTES", "20"))  # dars tugmasini necha daqiqa kutish
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -61,14 +64,17 @@ def is_login_url(url):
 
 
 async def check_session(page):
-    """Dars sahifasini ochib, sessiya faolligini tekshiradi."""
-    try:
-        await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
-        await asyncio.sleep(4)
-        return not is_login_url(page.url)
-    except Exception as e:
-        print(f"⚠️ Sahifaga kirib bo'lmadi: {e}")
-        return False
+    """Dars sahifasini 3 marta urinib ochadi.
+    True = sessiya faol, False = login kerak, None = sayt umuman ochilmadi."""
+    for attempt in range(1, 4):
+        try:
+            await page.goto(DARSLAR_URL, wait_until="domcontentloaded", timeout=60000)
+            await asyncio.sleep(4)
+            return not is_login_url(page.url)
+        except Exception as e:
+            print(f"⚠️ Urinish {attempt}/3 muvaffaqiyatsiz: {str(e).splitlines()[0]}")
+            await asyncio.sleep(10)
+    return None
 
 
 async def oneid_login(page, context):
@@ -120,6 +126,8 @@ async def oneid_login(page, context):
 
 
 async def run_bot():
+    tashkent = datetime.now(timezone(timedelta(hours=5))).strftime("%H:%M")
+    print(f"🕒 Bot ishga tushdi: Toshkent vaqti {tashkent}")
     async with async_playwright() as p:
         print("💡 [1/5] Brauzer ishga tushmoqda...")
         launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
@@ -137,17 +145,34 @@ async def run_bot():
         page.set_default_timeout(45000)
 
         try:
+            # Kesh bo'sh bo'lsa, boshidanoq Secret'dagi cookies'ni qo'yamiz
+            seed_used = False
+            if not os.path.exists(COOKIES_FILE) and EDUON_COOKIES:
+                seed = load_seed_cookies(EDUON_COOKIES)
+                if seed:
+                    await context.add_cookies(seed)
+                    seed_used = True
+                    print("🍪 Boshlang'ich cookies (Secret) qo'yildi.")
+
             print("💡 [2/5] EduOn jonli darslar sahifasiga kirilmoqda...")
             logged_in = await check_session(page)
 
-            # Kesh ishlamasa, Secret'dagi boshlang'ich cookies bilan urinib ko'ramiz
-            if not logged_in and EDUON_COOKIES:
-                print("🍪 Boshlang'ich cookies (Secret) bilan urinilmoqda...")
+            if logged_in is None:
+                print("❌ EduOn sayti 3 urinishda ham ochilmadi (tarmoq/IP muammosi).")
+                print("   Ishni qayta ishga tushiring (Re-run).")
+                sys.exit(1)
+
+            # Kesh eskirgan bo'lsa, Secret'dagi cookies bilan urinib ko'ramiz
+            if not logged_in and EDUON_COOKIES and not seed_used:
+                print("🍪 Kesh eskirgan, Secret'dagi cookies bilan urinilmoqda...")
                 seed = load_seed_cookies(EDUON_COOKIES)
                 if seed:
                     await context.clear_cookies()
                     await context.add_cookies(seed)
                     logged_in = await check_session(page)
+                    if logged_in is None:
+                        print("❌ EduOn sayti ochilmadi.")
+                        sys.exit(1)
 
             if logged_in:
                 print("✔️ Sessiya faol, login talab qilinmadi.")
@@ -168,12 +193,33 @@ async def run_bot():
                     await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
                     await asyncio.sleep(3)
 
-                print("🔍 Faol dars va 'Kirish' tugmasi qidirilmoqda...")
                 kirish_btn = page.locator(
                     "a:has-text('Kirish'), button:has-text('Kirish'), .btn-success"
                 ).first
 
-                if await kirish_btn.is_visible(timeout=15000):
+                print(f"🔍 'Kirish' tugmasi kutilmoqda (eng ko'pi bilan {WAIT_MINUTES} daqiqa)...")
+                deadline = time.monotonic() + WAIT_MINUTES * 60
+                found = False
+                while True:
+                    try:
+                        if await kirish_btn.is_visible(timeout=5000):
+                            found = True
+                            break
+                    except Exception:
+                        pass
+                    if time.monotonic() >= deadline:
+                        break
+                    await asyncio.sleep(60)
+                    try:
+                        await page.reload(wait_until="domcontentloaded", timeout=60000)
+                        await asyncio.sleep(3)
+                        if is_login_url(page.url):
+                            print("⚠️ Kutish paytida sessiya tugadi.")
+                            break
+                    except Exception as e:
+                        print(f"⚠️ Sahifani yangilab bo'lmadi: {str(e).splitlines()[0]}")
+
+                if found:
                     await kirish_btn.click()
                     print("🎉 MUVAFFAQIYATLI: Jonli dars xonasiga kirildi!")
                     await asyncio.sleep(5)
@@ -184,7 +230,7 @@ async def run_bot():
                     await asyncio.sleep(4800)
                     await context.storage_state(path=COOKIES_FILE)
                 else:
-                    print("📢 Hozir faol efirda dars mavjud emas ('Kirish' tugmasi topilmadi).")
+                    print("📢 Kutish vaqtida faol dars topilmadi ('Kirish' tugmasi chiqmadi).")
                     await page.screenshot(path="dars_yoq.png", full_page=True)
             except Exception as e:
                 print(f"❌ Dars jarayonida xatolik: {e}")
