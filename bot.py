@@ -20,6 +20,7 @@ COOKIES_FILE = "cookies.json"
 ONEID_LOGIN = os.getenv("ONEID_LOGIN")
 ONEID_PASSWORD = os.getenv("ONEID_PASSWORD")
 EDUON_COOKIES = os.getenv("EDUON_COOKIES")  # Cookie-Editor JSON (GitHub Secret)
+EDUON_LOCALSTORAGE = os.getenv("EDUON_LOCALSTORAGE")  # Safari'dan olingan localStorage JSON (GitHub Secret)
 WAIT_MINUTES = int(os.getenv("WAIT_MINUTES", "0"))  # 0 = kutmaydi, topilmasa darrov tugaydi
 
 USER_AGENT = (
@@ -148,6 +149,8 @@ async def whoami(page):
             } catch (e) { return {error: String(e)}; }
         }""")
         print(f"🪪 /me javobi: {res}")
+        keys = await page.evaluate("() => Object.keys(localStorage)")
+        print(f"🗂 localStorage kalitlari: {keys}")
     except Exception as e:
         print(f"⚠️ whoami xatosi: {e}")
 
@@ -199,17 +202,32 @@ async def run_bot():
 
         browser = await p.chromium.launch(headless=True, args=launch_args)
         context = await browser.new_context(**context_args)
+        if EDUON_LOCALSTORAGE:
+            try:
+                json.loads(EDUON_LOCALSTORAGE)  # to'g'ri JSON ekanini tekshirish
+                init_js = (
+                    "(() => { if (location.hostname !== 'eduon.adu.uz') return;"
+                    " let d = {}; try { d = JSON.parse(" + json.dumps(EDUON_LOCALSTORAGE) + "); } catch (e) {}"
+                    " for (const k in d) { try { if (localStorage.getItem(k) === null)"
+                    " localStorage.setItem(k, d[k]); } catch (e) {} } })();"
+                )
+                await context.add_init_script(init_js)
+                print("🗂 Secret'dagi localStorage qo'yiladi.")
+            except Exception as e:
+                print(f"⚠️ EDUON_LOCALSTORAGE JSON emas: {e}")
+
         page = await context.new_page()
         page.set_default_timeout(45000)
 
-        shown = {"n": 0}
+        seen_urls = set()
 
         def log_response(resp):
             try:
                 rtype = resp.request.resource_type
-                if rtype in ("xhr", "fetch") and shown["n"] < 25:
-                    shown["n"] += 1
-                    print(f"   🌐 {resp.status} {rtype} {resp.url.split('?')[0][:110]}")
+                path = resp.url.split("?")[0][:110]
+                if rtype in ("xhr", "fetch") and (resp.status, path) not in seen_urls and len(seen_urls) < 60:
+                    seen_urls.add((resp.status, path))
+                    print(f"   🌐 {resp.status} {path}")
             except Exception:
                 pass
 
