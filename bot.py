@@ -23,6 +23,8 @@ EDUON_COOKIES = os.getenv("EDUON_COOKIES")  # Cookie-Editor JSON (GitHub Secret)
 EDUON_LOCALSTORAGE = os.getenv("EDUON_LOCALSTORAGE")  # Safari'dan olingan localStorage JSON (GitHub Secret)
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # ixtiyoriy: darsga kirganda rasm yuborish
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+MODE = os.getenv("MODE") or "lesson"  # lesson = darsga kirish, schedule = jadvalni o'qish
+SCHEDULE_URL = "https://eduon.adu.uz/dashboard/student/schedule"
 WAIT_MINUTES = int(os.getenv("WAIT_MINUTES", "0"))  # 0 = kutmaydi, topilmasa darrov tugaydi
 
 USER_AGENT = (
@@ -163,6 +165,21 @@ async def send_telegram(p, text, photo_path=None):
     finally:
         if api:
             await api.dispose()
+
+
+async def schedule_dump(p, page):
+    """Jadval sahifasini ochib, skrinshot va matnini chiqaradi (tuzilmani o'rganish uchun)."""
+    print("📅 Jadval sahifasi ochilmoqda...")
+    await page.goto(SCHEDULE_URL, wait_until="domcontentloaded", timeout=60000)
+    try:
+        await page.wait_for_load_state("networkidle", timeout=20000)
+    except Exception:
+        pass
+    await asyncio.sleep(4)
+    await page.screenshot(path="jadval.png", full_page=True)
+    text = (await page.inner_text("body"))[:5000].replace("\n", " | ")
+    print(f"📅 Jadval matni: {text}")
+    await send_telegram(p, f"📅 Jadval sahifasi (Toshkent {tashkent_now()})", "jadval.png")
 
 
 async def whoami(page):
@@ -312,6 +329,10 @@ async def run_bot():
                 await asyncio.sleep(3)
 
             await context.storage_state(path=COOKIES_FILE)
+
+            if MODE == "schedule":
+                await schedule_dump(p, page)
+                return
 
             print("💡 [4/5] 'Jonli darslar' bo'limi tekshirilmoqda...")
             try:
