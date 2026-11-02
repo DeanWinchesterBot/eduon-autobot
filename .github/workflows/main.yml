@@ -47,6 +47,8 @@ jobs:
           ONEID_LOGIN: ${{ secrets.ONEID_LOGIN }}
           ONEID_PASSWORD: ${{ secrets.ONEID_PASSWORD }}
           EDUON_COOKIES: ${{ secrets.EDUON_COOKIES }}
+          EDUON_LOCALSTORAGE: ${{ secrets.EDUON_LOCALSTORAGE }}
+          WAIT_MINUTES: '20'
         run: |
           python -u bot.py
 
