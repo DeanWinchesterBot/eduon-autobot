@@ -20,7 +20,7 @@ COOKIES_FILE = "cookies.json"
 ONEID_LOGIN = os.getenv("ONEID_LOGIN")
 ONEID_PASSWORD = os.getenv("ONEID_PASSWORD")
 EDUON_COOKIES = os.getenv("EDUON_COOKIES")  # Cookie-Editor JSON (GitHub Secret)
-WAIT_MINUTES = int(os.getenv("WAIT_MINUTES", "20"))  # dars tugmasini necha daqiqa kutish
+WAIT_MINUTES = int(os.getenv("WAIT_MINUTES", "0"))  # 0 = kutmaydi, topilmasa darrov tugaydi
 
 USER_AGENT = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
@@ -125,6 +125,33 @@ async def oneid_login(page, context):
         page.set_default_timeout(45000)
 
 
+async def dump_page(page):
+    """Tugma topilmaganda: bot nimani ko'rayotganini logga chiqaradi."""
+    try:
+        print(f"🔎 Joriy manzil: {page.url}")
+        print(f"🔎 Sahifa sarlavhasi: {await page.title()}")
+        info = await page.evaluate("""() => {
+            const out = [];
+            document.querySelectorAll('*').forEach(el => {
+                const t = (el.innerText || '').trim();
+                if (t.length > 0 && t.length < 40 && /kirish/i.test(t) && el.children.length < 3) {
+                    const r = el.getBoundingClientRect();
+                    out.push(el.tagName + ' | class=' + (el.className || '').toString().slice(0, 60)
+                        + ' | text=' + t.replace(/\\s+/g, ' ')
+                        + ' | ' + Math.round(r.width) + 'x' + Math.round(r.height));
+                }
+            });
+            return out.slice(0, 15);
+        }""")
+        print(f"🔎 'Kirish' so'zi bor elementlar ({len(info)} ta):")
+        for line in info:
+            print("   -", line)
+        body = (await page.inner_text("body"))[:1200].replace("\n", " | ")
+        print(f"🔎 Sahifa matni: {body}")
+    except Exception as e:
+        print(f"⚠️ Diagnostika xatosi: {e}")
+
+
 async def run_bot():
     tashkent = datetime.now(timezone(timedelta(hours=5))).strftime("%H:%M")
     print(f"🕒 Bot ishga tushdi: Toshkent vaqti {tashkent}")
@@ -196,7 +223,7 @@ async def run_bot():
                 # Matni aynan "Kirish" bo'lgan, ko'rinib turgan istalgan element (a, button, div...)
                 kirish_btn = page.get_by_text("Kirish", exact=True).locator("visible=true").first
 
-                print(f"🔍 'Kirish' tugmasi kutilmoqda (eng ko'pi bilan {WAIT_MINUTES} daqiqa)...")
+                print(f"🔍 'Kirish' tugmasi kutilmoqda (kutish: {WAIT_MINUTES} daqiqa)...")
                 deadline = time.monotonic() + WAIT_MINUTES * 60
                 found = False
                 while True:
@@ -211,9 +238,9 @@ async def run_bot():
                         await page.screenshot(path="kutish.png", full_page=True)
                     except Exception:
                         pass
-                    print("⏳ Tugma hali ko'rinmadi, 60 soniyadan keyin qayta tekshiriladi...")
                     if time.monotonic() >= deadline:
                         break
+                    print("⏳ Tugma hali ko'rinmadi, 60 soniyadan keyin qayta tekshiriladi...")
                     await asyncio.sleep(60)
                     try:
                         await page.reload(wait_until="domcontentloaded", timeout=60000)
@@ -235,8 +262,9 @@ async def run_bot():
                     await asyncio.sleep(4800)
                     await context.storage_state(path=COOKIES_FILE)
                 else:
-                    print("📢 Kutish vaqtida faol dars topilmadi ('Kirish' tugmasi chiqmadi).")
+                    print("📢 Faol dars topilmadi ('Kirish' tugmasi ko'rinmadi).")
                     await page.screenshot(path="dars_yoq.png", full_page=True)
+                    await dump_page(page)
             except Exception as e:
                 print(f"❌ Dars jarayonida xatolik: {e}")
                 try:
