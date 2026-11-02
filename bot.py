@@ -193,20 +193,25 @@ async def run_bot():
                     await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
                     await asyncio.sleep(3)
 
-                kirish_btn = page.locator(
-                    "a:has-text('Kirish'), button:has-text('Kirish'), .btn-success"
-                ).first
+                # Matni aynan "Kirish" bo'lgan, ko'rinib turgan istalgan element (a, button, div...)
+                kirish_btn = page.get_by_text("Kirish", exact=True).locator("visible=true").first
 
                 print(f"🔍 'Kirish' tugmasi kutilmoqda (eng ko'pi bilan {WAIT_MINUTES} daqiqa)...")
                 deadline = time.monotonic() + WAIT_MINUTES * 60
                 found = False
                 while True:
                     try:
-                        if await kirish_btn.is_visible(timeout=5000):
-                            found = True
-                            break
+                        # wait_for haqiqatan kutadi (is_visible esa kutmaydi)
+                        await kirish_btn.wait_for(state="visible", timeout=10000)
+                        found = True
+                        break
                     except Exception:
                         pass
+                    try:
+                        await page.screenshot(path="kutish.png", full_page=True)
+                    except Exception:
+                        pass
+                    print("⏳ Tugma hali ko'rinmadi, 60 soniyadan keyin qayta tekshiriladi...")
                     if time.monotonic() >= deadline:
                         break
                     await asyncio.sleep(60)
