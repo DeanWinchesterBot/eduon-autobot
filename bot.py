@@ -129,6 +129,29 @@ async def oneid_login(page, context):
         page.set_default_timeout(45000)
 
 
+async def whoami(page):
+    """Sayt sizni kim deb bilishini tekshiradi (shaxsiy qiymatlarsiz, faqat tuzilma)."""
+    try:
+        res = await page.evaluate("""async () => {
+            try {
+                const r = await fetch('/bff/api/telegram/me', {credentials: 'include'});
+                let j = null;
+                try { j = await r.json(); } catch (e) {}
+                const shape = {};
+                if (j && typeof j === 'object') {
+                    for (const k of Object.keys(j).slice(0, 15)) {
+                        const v = j[k];
+                        shape[k] = v === null ? 'null' : (typeof v === 'object' ? 'object' : typeof v);
+                    }
+                }
+                return {status: r.status, shape: shape};
+            } catch (e) { return {error: String(e)}; }
+        }""")
+        print(f"🪪 /me javobi: {res}")
+    except Exception as e:
+        print(f"⚠️ whoami xatosi: {e}")
+
+
 async def dump_page(page):
     """Tugma topilmaganda: bot nimani ko'rayotganini logga chiqaradi."""
     try:
@@ -168,9 +191,11 @@ async def run_bot():
             "timezone_id": "Asia/Tashkent",  # sayt dars vaqtini brauzer soatiga qarab hisoblaydi
             "locale": "uz-UZ",
         }
-        if os.path.exists(COOKIES_FILE):
+        if os.path.exists(COOKIES_FILE) and not EDUON_COOKIES:
             print("🍪 Saqlangan sessiya (kesh) yuklanmoqda...")
             context_args["storage_state"] = COOKIES_FILE
+        elif EDUON_COOKIES:
+            print("🍪 Secret'dagi cookies ishlatiladi (kesh e'tiborga olinmaydi).")
 
         browser = await p.chromium.launch(headless=True, args=launch_args)
         context = await browser.new_context(**context_args)
@@ -193,7 +218,7 @@ async def run_bot():
         try:
             # Kesh bo'sh bo'lsa, boshidanoq Secret'dagi cookies'ni qo'yamiz
             seed_used = False
-            if not os.path.exists(COOKIES_FILE) and EDUON_COOKIES:
+            if EDUON_COOKIES:
                 seed = load_seed_cookies(EDUON_COOKIES)
                 if seed:
                     await context.add_cookies(seed)
@@ -222,6 +247,7 @@ async def run_bot():
 
             if logged_in:
                 print("✔️ Sessiya faol, login talab qilinmadi.")
+                await whoami(page)
             else:
                 print("⚠️ Tizim avtorizatsiya so'radi.")
                 print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
