@@ -49,6 +49,8 @@ jobs:
           EDUON_COOKIES: ${{ secrets.EDUON_COOKIES }}
           EDUON_LOCALSTORAGE: ${{ secrets.EDUON_LOCALSTORAGE }}
           WAIT_MINUTES: '20'
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
           python -u bot.py
 
