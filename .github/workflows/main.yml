@@ -2,6 +2,14 @@ name: Eduon Auto Lesson Bot
 
 on:
   workflow_dispatch:
+    inputs:
+      mode:
+        description: "lesson = darsga kirish, schedule = jadvalni o'qish"
+        default: lesson
+        type: choice
+        options:
+          - lesson
+          - schedule
   schedule:
     - cron: '30 3 * * 1-5' # 08:30
     - cron: '0 5 * * 1-5'  # 10:00
@@ -49,6 +57,7 @@ jobs:
           EDUON_COOKIES: ${{ secrets.EDUON_COOKIES }}
           EDUON_LOCALSTORAGE: ${{ secrets.EDUON_LOCALSTORAGE }}
           WAIT_MINUTES: '20'
+          MODE: ${{ inputs.mode }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
