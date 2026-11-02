@@ -21,6 +21,8 @@ ONEID_LOGIN = os.getenv("ONEID_LOGIN")
 ONEID_PASSWORD = os.getenv("ONEID_PASSWORD")
 EDUON_COOKIES = os.getenv("EDUON_COOKIES")  # Cookie-Editor JSON (GitHub Secret)
 EDUON_LOCALSTORAGE = os.getenv("EDUON_LOCALSTORAGE")  # Safari'dan olingan localStorage JSON (GitHub Secret)
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # ixtiyoriy: darsga kirganda rasm yuborish
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 WAIT_MINUTES = int(os.getenv("WAIT_MINUTES", "0"))  # 0 = kutmaydi, topilmasa darrov tugaydi
 
 USER_AGENT = (
@@ -130,6 +132,39 @@ async def oneid_login(page, context):
         page.set_default_timeout(45000)
 
 
+def tashkent_now():
+    return datetime.now(timezone(timedelta(hours=5))).strftime("%H:%M")
+
+
+async def send_telegram(p, text, photo_path=None):
+    """Telegram'ga xabar (yoki rasm) yuboradi. Token/chat sozlanmagan bo'lsa, jim o'tadi."""
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        return
+    api = None
+    try:
+        api = await p.request.new_context()
+        base = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}"
+        if photo_path and os.path.exists(photo_path):
+            with open(photo_path, "rb") as f:
+                buf = f.read()
+            r = await api.post(
+                base + "/sendPhoto",
+                multipart={
+                    "chat_id": TELEGRAM_CHAT_ID,
+                    "caption": text,
+                    "photo": {"name": "dars.png", "mimeType": "image/png", "buffer": buf},
+                },
+            )
+        else:
+            r = await api.post(base + "/sendMessage", form={"chat_id": TELEGRAM_CHAT_ID, "text": text})
+        print(f"📨 Telegram: {'yuborildi' if r.ok else 'xato ' + str(r.status)}")
+    except Exception as e:
+        print(f"⚠️ Telegram yuborilmadi: {str(e).splitlines()[0]}")
+    finally:
+        if api:
+            await api.dispose()
+
+
 async def whoami(page):
     """Sayt sizni kim deb bilishini tekshiradi (shaxsiy qiymatlarsiz, faqat tuzilma)."""
     try:
@@ -183,8 +218,7 @@ async def dump_page(page):
 
 
 async def run_bot():
-    tashkent = datetime.now(timezone(timedelta(hours=5))).strftime("%H:%M")
-    print(f"🕒 Bot ishga tushdi: Toshkent vaqti {tashkent}")
+    print(f"🕒 Bot ishga tushdi: Toshkent vaqti {tashkent_now()}")
     async with async_playwright() as p:
         print("💡 [1/5] Brauzer ishga tushmoqda...")
         launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
@@ -248,6 +282,7 @@ async def run_bot():
 
             if logged_in is None:
                 print("❌ EduOn sayti 3 urinishda ham ochilmadi (tarmoq/IP muammosi).")
+                await send_telegram(p, f"❌ EduOn ochilmadi (Toshkent {tashkent_now()}). Run'ni qayta ishga tushiring.")
                 print("   Ishni qayta ishga tushiring (Re-run).")
                 sys.exit(1)
 
@@ -270,6 +305,7 @@ async def run_bot():
                 print("⚠️ Tizim avtorizatsiya so'radi.")
                 print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
                 if not await oneid_login(page, context):
+                    await send_telegram(p, f"❌ Login muvaffaqiyatsiz (Toshkent {tashkent_now()}). Sessiya muddati tugagan bo'lishi mumkin: Secret'larni yangilang.")
                     await browser.close()
                     sys.exit(1)
                 await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
@@ -319,6 +355,7 @@ async def run_bot():
                     print("🎉 MUVAFFAQIYATLI: Jonli dars xonasiga kirildi!")
                     await asyncio.sleep(5)
                     await page.screenshot(path="darsga_kirildi.png", full_page=True)
+                    await send_telegram(p, f"✅ Jonli darsga kirildi (Toshkent {tashkent_now()})", "darsga_kirildi.png")
                     await context.storage_state(path=COOKIES_FILE)
 
                     print("⏳ Dars boshlandi. 1 soat 20 daqiqa darsda qatnashilmoqda...")
