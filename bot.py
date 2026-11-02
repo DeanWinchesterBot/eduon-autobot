@@ -69,7 +69,11 @@ async def check_session(page):
     for attempt in range(1, 4):
         try:
             await page.goto(DARSLAR_URL, wait_until="domcontentloaded", timeout=60000)
-            await asyncio.sleep(4)
+            try:
+                await page.wait_for_load_state("networkidle", timeout=20000)
+            except Exception:
+                pass
+            await asyncio.sleep(3)
             return not is_login_url(page.url)
         except Exception as e:
             print(f"⚠️ Urinish {attempt}/3 muvaffaqiyatsiz: {str(e).splitlines()[0]}")
@@ -161,6 +165,8 @@ async def run_bot():
         context_args = {
             "user_agent": USER_AGENT,
             "viewport": {"width": 1280, "height": 800},
+            "timezone_id": "Asia/Tashkent",  # sayt dars vaqtini brauzer soatiga qarab hisoblaydi
+            "locale": "uz-UZ",
         }
         if os.path.exists(COOKIES_FILE):
             print("🍪 Saqlangan sessiya (kesh) yuklanmoqda...")
@@ -170,6 +176,19 @@ async def run_bot():
         context = await browser.new_context(**context_args)
         page = await context.new_page()
         page.set_default_timeout(45000)
+
+        shown = {"n": 0}
+
+        def log_response(resp):
+            try:
+                rtype = resp.request.resource_type
+                if rtype in ("xhr", "fetch") and shown["n"] < 25:
+                    shown["n"] += 1
+                    print(f"   🌐 {resp.status} {rtype} {resp.url.split('?')[0][:110]}")
+            except Exception:
+                pass
+
+        page.on("response", log_response)
 
         try:
             # Kesh bo'sh bo'lsa, boshidanoq Secret'dagi cookies'ni qo'yamiz
