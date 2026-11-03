@@ -39,13 +39,42 @@ USER_AGENT = (
 )
 
 
+def _parse_expires(v):
+    """Turli ilovalar: soniya, millisoniya yoki ISO matn. Playwright uchun soniya (float) qaytaradi."""
+    if v in (None, "", 0):
+        return None
+    try:
+        x = float(v)
+        return x / 1000 if x > 1e12 else x
+    except (TypeError, ValueError):
+        pass
+    try:
+        return datetime.fromisoformat(str(v).replace("Z", "+00:00")).timestamp()
+    except Exception:
+        return None
+
+
 def load_seed_cookies(raw):
-    """Cookie-Editor JSON formatini Playwright formatiga o'giradi."""
+    """Cookie-Editor / boshqa ilovalar JSON'ini yoki 'nom=qiymat; nom2=qiymat2' qatorini Playwright formatiga o'giradi."""
+    raw = (raw or "").strip()
     try:
         data = json.loads(raw)
-    except Exception as e:
-        print(f"⚠️ EDUON_COOKIES JSON emas: {e}")
-        return []
+    except Exception:
+        # JSON emas: "auth_session=...; auth_token=..." ko'rinishidagi qator
+        out = []
+        for pair in raw.replace("\n", ";").split(";"):
+            if "=" not in pair:
+                continue
+            name, val = pair.strip().split("=", 1)
+            if name.strip():
+                out.append({"name": name.strip(), "value": val.strip(), "domain": "eduon.adu.uz", "path": "/",
+                            "secure": True, "httpOnly": True, "sameSite": "Lax"})
+        if not out:
+            print("⚠️ EDUON_COOKIES na JSON, na 'nom=qiymat' qatori emas.")
+        return out
+
+    if isinstance(data, dict):
+        data = data.get("cookies") if isinstance(data.get("cookies"), list) else [data]
 
     same_site_map = {"no_restriction": "None", "none": "None", "lax": "Lax", "strict": "Strict"}
     result = []
@@ -54,14 +83,15 @@ def load_seed_cookies(raw):
             item = {
                 "name": c["name"],
                 "value": c["value"],
-                "domain": c["domain"],
-                "path": c.get("path", "/"),
-                "secure": bool(c.get("secure", False)),
-                "httpOnly": bool(c.get("httpOnly", False)),
+                "domain": c.get("domain") or "eduon.adu.uz",
+                "path": c.get("path", "/") or "/",
+                "secure": bool(c.get("secure", True)),
+                "httpOnly": bool(c.get("httpOnly", c.get("http_only", False))),
                 "sameSite": same_site_map.get(str(c.get("sameSite", "")).lower(), "Lax"),
             }
-            if c.get("expirationDate") and not c.get("session"):
-                item["expires"] = float(c["expirationDate"])
+            exp = _parse_expires(c.get("expirationDate") or c.get("expires") or c.get("expiry"))
+            if exp and not c.get("session"):
+                item["expires"] = exp
             if item["sameSite"] == "None":
                 item["secure"] = True
             result.append(item)
