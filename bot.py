@@ -1,6 +1,8 @@
 import asyncio
+import base64
 import json
 import os
+import subprocess
 import sys
 import time
 from datetime import datetime, timedelta, timezone
@@ -25,6 +27,10 @@ TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")  # ixtiyoriy: darsga kirgan
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 MODE = os.getenv("MODE") or "lesson"  # lesson = darsga kirish, schedule = jadvalni o'qish
 SCHEDULE_URL = "https://eduon.adu.uz/dashboard/student/schedule"
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # ixtiyoriy: dars konspekti uchun
+GEMINI_MODEL = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
+AUDIO_FILE = "lesson_audio.webm"
+MP3_FILE = "lesson_audio.mp3"
 WAIT_MINUTES = int(os.getenv("WAIT_MINUTES", "0"))  # 0 = kutmaydi, topilmasa darrov tugaydi
 
 USER_AGENT = (
@@ -62,6 +68,32 @@ def load_seed_cookies(raw):
         except Exception as e:
             print(f"⚠️ Cookie o'tkazib yuborildi: {e}")
     return result
+
+
+def cookies_from_ls(raw):
+    """LS bookmark nusxasidagi '__cookies' (document.cookie) qatoridan cookie ro'yxati yasaydi."""
+    try:
+        text = (json.loads(raw) or {}).get("__cookies") or ""
+    except Exception:
+        return []
+    out = []
+    for pair in text.split(";"):
+        if "=" not in pair:
+            continue
+        name, val = pair.strip().split("=", 1)
+        if name:
+            out.append({"name": name, "value": val, "domain": "eduon.adu.uz", "path": "/",
+                        "secure": True, "httpOnly": False, "sameSite": "Lax"})
+    return out
+
+
+def get_seed():
+    """Boshlang'ich cookies: avval EDUON_COOKIES (Cookie-Editor), bo'lmasa LS nusxasidagi cookies."""
+    if EDUON_COOKIES:
+        return load_seed_cookies(EDUON_COOKIES)
+    if EDUON_LOCALSTORAGE:
+        return cookies_from_ls(EDUON_LOCALSTORAGE)
+    return []
 
 
 def is_login_url(url):
@@ -177,9 +209,178 @@ async def schedule_dump(p, page):
         pass
     await asyncio.sleep(4)
     await page.screenshot(path="jadval.png", full_page=True)
-    text = (await page.inner_text("body"))[:5000].replace("\n", " | ")
-    print(f"📅 Jadval matni: {text}")
+    text = (await page.inner_text("body")).replace("\n", " | ")
+    print("📅 Jadval o'qildi (matn faqat Telegram'ga yuboriladi).")
     await send_telegram(p, f"📅 Jadval sahifasi (Toshkent {tashkent_now()})", "jadval.png")
+    await send_telegram(p, text[:3800])
+
+
+# ---------------------------------------------------------------------------
+# Dars audiosini yozib olish va konspekt tayyorlash (Gemini)
+# ---------------------------------------------------------------------------
+audio_state = {"bytes": 0, "tracks": 0}
+
+REC_JS = r"""
+(() => {
+  if (window.__lessonRecInstalled) return;
+  window.__lessonRecInstalled = true;
+  const Orig = window.RTCPeerConnection;
+  if (!Orig) return;
+  let ctx = null, dest = null, rec = null;
+  const handled = new Set();
+  function ensure() {
+    if (rec) return;
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+    dest = ctx.createMediaStreamDestination();
+    try { ctx.resume(); } catch (e) {}
+    const opts = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? {mimeType: 'audio/webm;codecs=opus'} : {};
+    rec = new MediaRecorder(dest.stream, opts);
+    rec.ondataavailable = (ev) => {
+      if (!ev.data || !ev.data.size) return;
+      const fr = new FileReader();
+      fr.onloadend = () => { try { window.__saveChunk(String(fr.result).split(',')[1]); } catch (e) {} };
+      fr.readAsDataURL(ev.data);
+    };
+    rec.start(10000);
+  }
+  function onTrack(track) {
+    if (!track || track.kind !== 'audio' || handled.has(track.id)) return;
+    handled.add(track.id);
+    try {
+      ensure();
+      const ms = new MediaStream([track]);
+      const a = new Audio(); a.muted = true; a.srcObject = ms; a.play().catch(() => {});
+      ctx.createMediaStreamSource(ms).connect(dest);
+      window.__trackAdded();
+    } catch (e) {}
+  }
+  function Patched(...args) {
+    const pc = new Orig(...args);
+    pc.addEventListener('track', (e) => onTrack(e.track));
+    return pc;
+  }
+  Patched.prototype = Orig.prototype;
+  Object.setPrototypeOf(Patched, Orig);
+  window.RTCPeerConnection = Patched;
+  if (window.webkitRTCPeerConnection) window.webkitRTCPeerConnection = Patched;
+  window.__stopRec = () => { try { if (rec && rec.state !== 'inactive') rec.stop(); } catch (e) {} };
+})();
+"""
+
+NOTES_PROMPT = """Sen talabaga darsni tushunishda yordam beradigan o'qituvchisan. Senga universitet jonli darsining audio yozuvi berildi (til: o'zbek, rus yoki aralash). Darsni boshidan oxirigacha diqqat bilan tingla va talaba uchun o'zbek tilida, sodda va tushunarli qilib batafsil konspekt yoz. Muhim hech narsani tashlab ketma.
+
+Tuzilishi:
+1) MAVZU: dars mavzusi va 3-5 gapli qisqa xulosa.
+2) ASOSIY TUSHUNCHALAR: har bir atama yoki ta'rifni oddiy so'zlar bilan, iloji bo'lsa hayotiy misol bilan tushuntir.
+3) DARS TAFSILOTI: dars qanday tartibda o'tganini bosqichma-bosqich, o'qituvchi aytgan barcha muhim fikr, misol, formula, raqam, sana va nomlar bilan yoz.
+4) VAZIFA VA ESLATMALAR: o'qituvchi aytgan uy vazifasi, topshiriq, muddatlar, nazorat yoki imtihon haqidagi gaplar. Aytilmagan bo'lsa "aytilmadi" deb yoz.
+5) ESDA QOLDIRISH UCHUN: 5-7 ta eng muhim fikrni qisqa ro'yxat qilib yoz va o'zini tekshirish uchun 5 ta savol ber.
+
+Qoidalar: faqat audioda aytilgan narsalarga tayan, o'zingdan fakt to'qima. O'zing qo'shgan tushuntirish misollarini "Misol:" deb ajrat. Eshitilmagan yoki tushunarsiz joyni "(eshitilmadi)" deb belgila. Markdown belgilarini (**, #) ishlatma; oddiy matn, raqamlangan bo'limlar va ba'zi emojilar ishlat. Audioda dars bo'lmasa yoki faqat jimlik bo'lsa, shuni ayt."""
+
+
+def save_chunk(b64):
+    try:
+        data = base64.b64decode(b64)
+        with open(AUDIO_FILE, "ab") as f:
+            f.write(data)
+        audio_state["bytes"] += len(data)
+    except Exception:
+        pass
+
+
+def track_added():
+    audio_state["tracks"] += 1
+    print(f"🎧 Audio treki ulandi (jami {audio_state['tracks']})")
+
+
+async def send_long(p, text):
+    """Uzun matnni Telegram uchun bo'laklarga bo'lib yuboradi."""
+    parts, cur = [], ""
+    for para in text.split("\n"):
+        if len(cur) + len(para) + 1 > 3800:
+            if cur:
+                parts.append(cur)
+            cur = para
+        else:
+            cur = (cur + "\n" + para) if cur else para
+    if cur:
+        parts.append(cur)
+    for i, part in enumerate(parts, 1):
+        head = f"📝 Konspekt ({i}/{len(parts)})\n\n" if len(parts) > 1 else "📝 Konspekt\n\n"
+        await send_telegram(p, head + part)
+
+
+def _gemini_notes():
+    from google import genai
+
+    client = genai.Client(api_key=GEMINI_API_KEY)
+    f = client.files.upload(file=MP3_FILE)
+    for _ in range(40):
+        state = str(getattr(f, "state", "") or "")
+        if "FAILED" in state:
+            raise RuntimeError("Gemini audio faylni qayta ishlay olmadi")
+        if not state or "ACTIVE" in state:
+            break
+        time.sleep(5)
+        f = client.files.get(name=f.name)
+    resp = client.models.generate_content(model=GEMINI_MODEL, contents=[f, NOTES_PROMPT])
+    return resp.text
+
+
+async def make_notes(p):
+    size = os.path.getsize(AUDIO_FILE) if os.path.exists(AUDIO_FILE) else 0
+    print(f"🎧 Yozilgan audio: {size // 1024} KB")
+    if size < 100_000:
+        await send_telegram(p, "⚠️ Dars audiosi yozib olinmadi (ovoz oqimi ushlanmadi). Konspekt tayyorlanmadi.")
+        return
+    try:
+        res = await asyncio.to_thread(
+            subprocess.run,
+            ["ffmpeg", "-y", "-i", AUDIO_FILE, "-ac", "1", "-ar", "16000", "-b:a", "32k", MP3_FILE],
+            capture_output=True,
+        )
+        if res.returncode != 0 or not os.path.exists(MP3_FILE):
+            raise RuntimeError("ffmpeg audioni o'zgartira olmadi")
+        print(f"🎧 MP3 tayyor: {os.path.getsize(MP3_FILE) // 1024} KB. Gemini'ga yuborilmoqda...")
+        text = None
+        for attempt in range(1, 4):
+            try:
+                text = await asyncio.to_thread(_gemini_notes)
+                break
+            except Exception as e:
+                print(f"⚠️ Gemini urinish {attempt}/3 xato: {type(e).__name__}")
+                await asyncio.sleep(45)
+        if not text:
+            await send_telegram(p, "⚠️ Konspekt tayyorlanmadi: Gemini javob bermadi (limit yoki model nomi). Keyinroq qayta urinib ko'ring.")
+            return
+        print("📝 Konspekt tayyor, Telegram'ga yuborilmoqda...")
+        await send_long(p, text)
+    except Exception as e:
+        print(f"⚠️ Konspekt xatosi: {type(e).__name__}")
+        await send_telegram(p, "⚠️ Konspekt tayyorlashda xato chiqdi.")
+
+
+async def attend_lesson(p, page):
+    """Dars davomida (80 daqiqa) xonada turadi va audio holatini kuzatadi."""
+    await asyncio.sleep(180)
+    if GEMINI_API_KEY:
+        print(f"🎧 Audio holati: treklar={audio_state['tracks']}, yozilgan={audio_state['bytes'] // 1024} KB")
+        if audio_state["bytes"] == 0:
+            await send_telegram(p, "⚠️ Darsga kirildi, lekin ovoz hali ushlanmayapti. Konspekt chiqmasligi mumkin.")
+    remaining = 4800 - 180
+    while remaining > 0:
+        step = min(600, remaining)
+        await asyncio.sleep(step)
+        remaining -= step
+        if GEMINI_API_KEY:
+            print(f"🎧 Audio holati: treklar={audio_state['tracks']}, yozilgan={audio_state['bytes'] // 1024} KB")
+    if GEMINI_API_KEY:
+        try:
+            await page.evaluate("window.__stopRec && window.__stopRec()")
+        except Exception:
+            pass
+        await asyncio.sleep(5)
 
 
 async def whoami(page):
@@ -228,28 +429,29 @@ async def dump_page(page):
         print(f"🔎 'Kirish' so'zi bor elementlar ({len(info)} ta):")
         for line in info:
             print("   -", line)
-        body = (await page.inner_text("body"))[:1200].replace("\n", " | ")
-        print(f"🔎 Sahifa matni: {body}")
     except Exception as e:
         print(f"⚠️ Diagnostika xatosi: {e}")
 
 
 async def run_bot():
+    # Secret berilgan bo'lsa (cookies yoki localStorage), eski keshni ishlatmaymiz: kesh eskirgan sessiyani saqlab qolishi mumkin
+    has_seed = bool(EDUON_COOKIES) or bool(EDUON_LOCALSTORAGE)
     print(f"🕒 Bot ishga tushdi: Toshkent vaqti {tashkent_now()}")
     async with async_playwright() as p:
         print("💡 [1/5] Brauzer ishga tushmoqda...")
-        launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"]
+        launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
+                       "--autoplay-policy=no-user-gesture-required"]
         context_args = {
             "user_agent": USER_AGENT,
             "viewport": {"width": 1280, "height": 800},
             "timezone_id": "Asia/Tashkent",  # sayt dars vaqtini brauzer soatiga qarab hisoblaydi
             "locale": "uz-UZ",
         }
-        if os.path.exists(COOKIES_FILE) and not EDUON_COOKIES:
+        if os.path.exists(COOKIES_FILE) and not has_seed:
             print("🍪 Saqlangan sessiya (kesh) yuklanmoqda...")
             context_args["storage_state"] = COOKIES_FILE
-        elif EDUON_COOKIES:
-            print("🍪 Secret'dagi cookies ishlatiladi (kesh e'tiborga olinmaydi).")
+        elif has_seed:
+            print("🍪 Secret'dagi sessiya ishlatiladi (kesh e'tiborga olinmaydi).")
 
         browser = await p.chromium.launch(headless=True, args=launch_args)
         context = await browser.new_context(**context_args)
@@ -266,6 +468,15 @@ async def run_bot():
                 print("🗂 Secret'dagi localStorage qo'yiladi.")
             except Exception as e:
                 print(f"⚠️ EDUON_LOCALSTORAGE JSON emas: {e}")
+
+        if GEMINI_API_KEY:
+            for old_file in (AUDIO_FILE, MP3_FILE):
+                if os.path.exists(old_file):
+                    os.remove(old_file)
+            await context.expose_function("__saveChunk", save_chunk)
+            await context.expose_function("__trackAdded", track_added)
+            await context.add_init_script(REC_JS)
+            print("🎙 Dars audiosi yozib olinadi (konspekt uchun).")
 
         page = await context.new_page()
         page.set_default_timeout(45000)
@@ -287,8 +498,8 @@ async def run_bot():
         try:
             # Kesh bo'sh bo'lsa, boshidanoq Secret'dagi cookies'ni qo'yamiz
             seed_used = False
-            if EDUON_COOKIES:
-                seed = load_seed_cookies(EDUON_COOKIES)
+            if has_seed:
+                seed = get_seed()
                 if seed:
                     await context.add_cookies(seed)
                     seed_used = True
@@ -304,9 +515,9 @@ async def run_bot():
                 sys.exit(1)
 
             # Kesh eskirgan bo'lsa, Secret'dagi cookies bilan urinib ko'ramiz
-            if not logged_in and EDUON_COOKIES and not seed_used:
+            if not logged_in and has_seed and not seed_used:
                 print("🍪 Kesh eskirgan, Secret'dagi cookies bilan urinilmoqda...")
-                seed = load_seed_cookies(EDUON_COOKIES)
+                seed = get_seed()
                 if seed:
                     await context.clear_cookies()
                     await context.add_cookies(seed)
@@ -380,8 +591,10 @@ async def run_bot():
                     await context.storage_state(path=COOKIES_FILE)
 
                     print("⏳ Dars boshlandi. 1 soat 20 daqiqa darsda qatnashilmoqda...")
-                    await asyncio.sleep(4800)
+                    await attend_lesson(p, page)
                     await context.storage_state(path=COOKIES_FILE)
+                    if GEMINI_API_KEY:
+                        await make_notes(p)
                 else:
                     print("📢 Faol dars topilmadi ('Kirish' tugmasi ko'rinmadi).")
                     await page.screenshot(path="dars_yoq.png", full_page=True)
