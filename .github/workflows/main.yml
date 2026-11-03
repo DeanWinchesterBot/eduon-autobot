@@ -16,6 +16,9 @@ on:
     - cron: '0 7 * * 1-5'  # 12:00
     - cron: '30 8 * * 1-5' # 13:30
 
+permissions:
+  contents: read
+
 concurrency:
   group: eduon-bot
   cancel-in-progress: false
@@ -37,18 +40,14 @@ jobs:
       - name: Kutubxonalarni o'rnatish
         run: |
           python -m pip install --upgrade pip
-          pip install playwright python-dotenv
+          pip install playwright python-dotenv google-genai
+
+      - name: ffmpeg (audio uchun)
+        run: which ffmpeg || (sudo apt-get update && sudo apt-get install -y ffmpeg)
 
       - name: Playwright brauzerini o'rnatish
         run: |
           playwright install --with-deps chromium
-
-      - name: Cookies keshini tiklash
-        uses: actions/cache/restore@v4
-        with:
-          path: cookies.json
-          key: eduon-cookies-${{ github.run_id }}
-          restore-keys: eduon-cookies-
 
       - name: Botni ishga tushirish
         env:
@@ -60,20 +59,6 @@ jobs:
           MODE: ${{ inputs.mode }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python -u bot.py
-
-      - name: Cookies keshini saqlash
-        if: always() && hashFiles('cookies.json') != ''
-        uses: actions/cache/save@v4
-        with:
-          path: cookies.json
-          key: eduon-cookies-${{ github.run_id }}
-
-      - name: Skrinshotlarni saqlash (Tekshirish uchun)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: bot-screenshots
-          path: '*.png'
-          if-no-files-found: ignore
