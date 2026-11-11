@@ -126,6 +126,52 @@ def get_seed():
     return []
 
 
+def jwt_exp(token):
+    """JWT ichidagi amal qilish muddatini (soniya) qaytaradi. Imzo tekshirilmaydi."""
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        return int(json.loads(base64.urlsafe_b64decode(payload))["exp"])
+    except Exception:
+        return None
+
+
+def seed_token_exp():
+    """Secret'lardagi tokenning amal qilish muddati (auth_token cookie yoki auth-store)."""
+    try:
+        for c in get_seed():
+            if c["name"] == "auth_token":
+                e = jwt_exp(c["value"])
+                if e:
+                    return e
+    except Exception:
+        pass
+    try:
+        d = json.loads(EDUON_LOCALSTORAGE or "{}")
+        tok = json.loads(d.get("auth-store", "{}"))["state"]["user"]["token"]
+        return jwt_exp(tok)
+    except Exception:
+        return None
+
+
+def fmt_tashkent(ts):
+    return datetime.fromtimestamp(ts, timezone(timedelta(hours=5))).strftime("%d.%m %H:%M")
+
+
+async def log_token_exp(context, tag):
+    """Brauzerdagi auth_token cookie muddatini logga chiqaradi (sayt tokenni o'zi yangilaydimi, shuni bilish uchun)."""
+    try:
+        for c in await context.cookies():
+            if c["name"] == "auth_token":
+                e = jwt_exp(c["value"])
+                if e:
+                    print(f"🔑 Token muddati ({tag}): {fmt_tashkent(e)} Toshkent")
+                return
+        print(f"🔑 Token cookie topilmadi ({tag}).")
+    except Exception:
+        pass
+
+
 def is_login_url(url):
     return any(x in url for x in ("/login", "id.egov.uz", "/auth", "oauth"))
 
@@ -341,11 +387,39 @@ async def send_long(p, text):
         await send_telegram(p, head + part)
 
 
-def _gemini_notes():
+def _pick_models(client):
+    """Gemini modellar ro'yxatidan eng yangi 'flash' modellarni tanlaydi (model nomlari tez eskiradi)."""
+    import re
+
+    found = []
+    try:
+        for m in client.models.list():
+            name = (getattr(m, "name", "") or "").replace("models/", "")
+            acts = getattr(m, "supported_actions", None) or []
+            if "generateContent" not in acts or "flash" not in name:
+                continue
+            if any(x in name for x in ("lite", "image", "tts", "live", "audio", "exp", "robotics", "thinking", "embed")):
+                continue
+            mt = re.search(r"gemini-(\d+(?:\.\d+)?)", name)
+            found.append((float(mt.group(1)) if mt else 0.0, "preview" not in name, name))
+    except Exception as e:
+        print(f"⚠️ Model ro'yxatini olib bo'lmadi: {type(e).__name__}")
+    found.sort(reverse=True)
+    order = ([os.getenv("GEMINI_MODEL")] if os.getenv("GEMINI_MODEL") else []) + [n for _, _, n in found[:3]]
+    order += ["gemini-3.5-flash", "gemini-2.5-flash"]
+    seen, models = set(), []
+    for n in order:
+        if n and n not in seen:
+            seen.add(n)
+            models.append(n)
+    return models
+
+
+def _gemini_notes(audio_path=MP3_FILE, prompt=None):
     from google import genai
 
     client = genai.Client(api_key=GEMINI_API_KEY)
-    f = client.files.upload(file=MP3_FILE)
+    f = client.files.upload(file=audio_path)
     for _ in range(40):
         state = str(getattr(f, "state", "") or "")
         if "FAILED" in state:
@@ -354,8 +428,18 @@ def _gemini_notes():
             break
         time.sleep(5)
         f = client.files.get(name=f.name)
-    resp = client.models.generate_content(model=GEMINI_MODEL, contents=[f, NOTES_PROMPT])
-    return resp.text
+    last = None
+    for model in _pick_models(client):
+        try:
+            resp = client.models.generate_content(model=model, contents=[f, prompt or NOTES_PROMPT])
+            if resp.text:
+                print(f"🤖 Gemini modeli: {model}")
+                return resp.text
+            last = RuntimeError(f"{model}: bo'sh javob")
+        except Exception as e:
+            last = e
+            print(f"⚠️ Model {model}: {type(e).__name__}")
+    raise last or RuntimeError("Model topilmadi")
 
 
 async def make_notes(p):
@@ -373,16 +457,17 @@ async def make_notes(p):
         if res.returncode != 0 or not os.path.exists(MP3_FILE):
             raise RuntimeError("ffmpeg audioni o'zgartira olmadi")
         print(f"🎧 MP3 tayyor: {os.path.getsize(MP3_FILE) // 1024} KB. Gemini'ga yuborilmoqda...")
-        text = None
-        for attempt in range(1, 4):
+        text, last_err = None, ""
+        for attempt in range(1, 3):
             try:
                 text = await asyncio.to_thread(_gemini_notes)
                 break
             except Exception as e:
-                print(f"⚠️ Gemini urinish {attempt}/3 xato: {type(e).__name__}")
-                await asyncio.sleep(45)
+                last_err = f"{type(e).__name__}: {str(e)[:250]}".replace(GEMINI_API_KEY or "x-none", "***")
+                print(f"⚠️ Gemini urinish {attempt}/2 xato: {type(e).__name__}")
+                await asyncio.sleep(60)
         if not text:
-            await send_telegram(p, "⚠️ Konspekt tayyorlanmadi: Gemini javob bermadi (limit yoki model nomi). Keyinroq qayta urinib ko'ring.")
+            await send_telegram(p, f"⚠️ Konspekt tayyorlanmadi: Gemini javob bermadi.\nSabab: {last_err}")
             return
         print("📝 Konspekt tayyor, Telegram'ga yuborilmoqda...")
         await send_long(p, text)
@@ -468,6 +553,12 @@ async def run_bot():
     has_seed = bool(EDUON_COOKIES) or bool(EDUON_LOCALSTORAGE)
     print(f"🕒 Bot ishga tushdi: Toshkent vaqti {tashkent_now()}")
     async with async_playwright() as p:
+        exp = seed_token_exp()
+        if exp:
+            left_h = (exp - time.time()) / 3600
+            print(f"🔑 Secret'dagi token muddati: {fmt_tashkent(exp)} Toshkent (qoldi {left_h:.0f} soat)")
+            if 0 < left_h < 36:
+                await send_telegram(p, f"⏰ Sessiya {left_h:.0f} soatdan keyin tugaydi ({fmt_tashkent(exp)}). Cookies va localStorage'ni yangilang, aks holda bot darsga kirolmaydi.")
         print("💡 [1/5] Brauzer ishga tushmoqda...")
         launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
                        "--autoplay-policy=no-user-gesture-required"]
@@ -558,6 +649,7 @@ async def run_bot():
 
             if logged_in:
                 print("✔️ Sessiya faol, login talab qilinmadi.")
+                await log_token_exp(context, "boshida")
                 await whoami(page)
             else:
                 print("⚠️ Tizim avtorizatsiya so'radi.")
@@ -622,6 +714,7 @@ async def run_bot():
 
                     print("⏳ Dars boshlandi. 1 soat 20 daqiqa darsda qatnashilmoqda...")
                     await attend_lesson(p, page)
+                    await log_token_exp(context, "dars oxirida")
                     await context.storage_state(path=COOKIES_FILE)
                     if GEMINI_API_KEY:
                         await make_notes(p)
