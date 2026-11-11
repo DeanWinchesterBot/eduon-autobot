@@ -31,6 +31,8 @@ GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")  # ixtiyoriy: dars konspekti uchun
 GEMINI_MODEL = os.getenv("GEMINI_MODEL") or "gemini-2.5-flash"
 AUDIO_FILE = "lesson_audio.webm"
 MP3_FILE = "lesson_audio.mp3"
+SESSION_URL = os.getenv("SESSION_URL")  # Cloudflare Worker manzili (Telegram orqali yangilanadigan sessiya)
+SESSION_KEY = os.getenv("SESSION_KEY")
 WAIT_MINUTES = int(os.getenv("WAIT_MINUTES", "0"))  # 0 = kutmaydi, topilmasa darrov tugaydi
 
 USER_AGENT = (
@@ -548,17 +550,47 @@ async def dump_page(page):
         print(f"⚠️ Diagnostika xatosi: {e}")
 
 
+async def load_remote_session(p):
+    """Telegram orqali yangilangan sessiyani Worker'dan oladi (bo'lsa, GitHub Secret'lar o'rnini bosadi)."""
+    global EDUON_COOKIES, EDUON_LOCALSTORAGE
+    if not SESSION_URL or not SESSION_KEY:
+        return
+    api = None
+    try:
+        api = await p.request.new_context()
+        r = await api.get(SESSION_URL.rstrip("/") + "/session", headers={"Authorization": f"Bearer {SESSION_KEY}"}, timeout=30000)
+        if not r.ok:
+            print(f"⚠️ Sessiya ombori javobi: {r.status} (GitHub Secret'lar ishlatiladi)")
+            return
+        data = await r.json()
+        got = []
+        if data.get("cookies"):
+            EDUON_COOKIES = data["cookies"]
+            got.append("cookies")
+        if data.get("ls"):
+            EDUON_LOCALSTORAGE = data["ls"]
+            got.append("localStorage")
+        print(f"☁️ Sessiya ombori: {', '.join(got) if got else 'bo`sh'} olindi.")
+    except Exception as e:
+        print(f"⚠️ Sessiya omboriga ulanib bo'lmadi: {type(e).__name__} (GitHub Secret'lar ishlatiladi)")
+    finally:
+        if api:
+            await api.dispose()
+
+
 async def run_bot():
     # Secret berilgan bo'lsa (cookies yoki localStorage), eski keshni ishlatmaymiz: kesh eskirgan sessiyani saqlab qolishi mumkin
     has_seed = bool(EDUON_COOKIES) or bool(EDUON_LOCALSTORAGE)
     print(f"🕒 Bot ishga tushdi: Toshkent vaqti {tashkent_now()}")
     async with async_playwright() as p:
+        await load_remote_session(p)
+        has_seed = bool(EDUON_COOKIES) or bool(EDUON_LOCALSTORAGE)
         exp = seed_token_exp()
         if exp:
             left_h = (exp - time.time()) / 3600
             print(f"🔑 Secret'dagi token muddati: {fmt_tashkent(exp)} Toshkent (qoldi {left_h:.0f} soat)")
             if 0 < left_h < 36:
-                await send_telegram(p, f"⏰ Sessiya {left_h:.0f} soatdan keyin tugaydi ({fmt_tashkent(exp)}). Cookies va localStorage'ni yangilang, aks holda bot darsga kirolmaydi.")
+                await send_telegram(p, f"⏰ Sessiya {left_h:.0f} soatdan keyin tugaydi ({fmt_tashkent(exp)}). Telegram'ga yangi cookies yuboring va LS bookmark bilan localStorage'ni yangilang, aks holda bot darsga kirolmaydi.")
         print("💡 [1/5] Brauzer ishga tushmoqda...")
         launch_args = ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage",
                        "--autoplay-policy=no-user-gesture-required"]
@@ -655,7 +687,7 @@ async def run_bot():
                 print("⚠️ Tizim avtorizatsiya so'radi.")
                 print("💡 [3/5] OneID orqali tizimga kirish boshlandi...")
                 if not await oneid_login(page, context):
-                    await send_telegram(p, f"❌ Login muvaffaqiyatsiz (Toshkent {tashkent_now()}). Sessiya muddati tugagan bo'lishi mumkin: Secret'larni yangilang.")
+                    await send_telegram(p, f"❌ Login muvaffaqiyatsiz (Toshkent {tashkent_now()}). Sessiya muddati tugagan bo'lishi mumkin: Telegram'ga yangi cookies yuboring va LS bookmark bilan localStorage'ni yangilang, keyin /run yozing.")
                     await browser.close()
                     sys.exit(1)
                 await page.goto(DARSLAR_URL, wait_until="domcontentloaded")
